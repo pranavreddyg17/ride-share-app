@@ -34,6 +34,7 @@ export interface Driver {
   availability: Slot[];
   createdAt: string;
   hours: number;
+  creditedHours?: number;
   rides: number;
   rating: number;
 }
@@ -74,6 +75,9 @@ export interface Ride {
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  acceptedAt?: string | null;
+  arrivedAt?: string | null;
+  cancelledAt?: string | null;
   otp: string | null;
   otpExpiresAt: string | null;
   otpAttempts: number;
@@ -98,6 +102,17 @@ export interface Activity {
   resolved: boolean;
   note: string;
 }
+export interface ServiceCredit {
+  id: string;
+  rideId: string;
+  driverId: string;
+  minutes: number;
+  status: 'approved' | 'excluded';
+  reason: string;
+  reviewedBy: string;
+  reviewedAt: string;
+  revision: number;
+}
 export interface Member {
   email: string;
   role: Role;
@@ -120,6 +135,7 @@ export interface State {
   families: Family[];
   anchors: Anchor[];
   rides: Ride[];
+  credits: ServiceCredit[];
   events: Activity[];
   members: Member[];
   settings: Settings;

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Kinetic Youth | Community rides',
   description:
-    'Coordinated community rides for North Texas students. Manage drivers, schedule rides, and follow every journey.',
+    'Student transportation, ride coordination, and driver service records for North Texas.',
 };
 
 export default function RootLayout({

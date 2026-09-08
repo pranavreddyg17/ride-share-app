@@ -235,9 +235,7 @@ function BookingScreen({
           <span className="caps-label">
             {step === 0 ? 'LET’S GET THERE' : 'REVIEW YOUR RIDE'}
           </span>
-          <h1>
-            {step === 0 ? 'Where are we headed?' : 'A ride toward possibility.'}
-          </h1>
+          <h1>{step === 0 ? 'Request a ride' : 'Review your ride'}</h1>
           <p className="panel-copy">
             {step === 0
               ? `Plan ${family?.student.split(' ')[0] ?? 'your student'}’s next ride.`
@@ -389,7 +387,7 @@ function BookingScreen({
                 disabled={busy || !family?.consent}
                 onClick={request}
               >
-                {busy ? 'Requesting…' : 'Request community ride'}
+                {busy ? 'Requesting…' : 'Request ride'}
                 <ArrowRight />
               </button>
               {!family?.consent && (
@@ -404,10 +402,6 @@ function BookingScreen({
           )}
         </div>
       </section>
-      <div className="map-bottom-label">
-        <ShieldCheck size={14} />
-        Youth moving youth forward
-      </div>
     </div>
   );
 }
@@ -589,22 +583,22 @@ export function TripScreen({
   }, [ride.status, stale, terminal, ride.id, state.demo, state.role]);
   const titles: Record<string, string> = isDriver
     ? {
-        pending: 'A new ride for you.',
-        accepted: 'Head to the pickup.',
-        arrived: 'Let’s verify your rider.',
-        in_progress: 'On the way.',
-        completed: 'Another door opened.',
-        cancelled: 'This ride was cancelled.',
+        pending: 'Ride assignment',
+        accepted: 'Go to pickup',
+        arrived: 'Verify pickup',
+        in_progress: 'Ride in progress',
+        completed: 'Ride completed',
+        cancelled: 'Ride cancelled',
       }
     : {
         pending: ride.driverId
-          ? 'Waiting for confirmation.'
-          : 'Finding your community match.',
-        accepted: 'Your ride is confirmed.',
-        arrived: 'Your driver is here.',
-        in_progress: 'On the way to opportunity.',
-        completed: 'You’ve arrived.',
-        cancelled: 'This ride was cancelled.',
+          ? 'Awaiting driver confirmation'
+          : 'Awaiting driver assignment',
+        accepted: 'Ride confirmed',
+        arrived: 'Driver at pickup',
+        in_progress: 'Ride in progress',
+        completed: 'Ride completed',
+        cancelled: 'Ride cancelled',
       };
   const statusLine =
     ride.status === 'in_progress'
@@ -696,7 +690,7 @@ export function TripScreen({
                     ) : d.rating ? (
                       <>★ {d.rating.toFixed(1)} · Reviewed driver</>
                     ) : (
-                      'Reviewed community driver'
+                      'Approved driver'
                     )}
                   </span>
                 </div>

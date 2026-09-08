@@ -2,14 +2,6 @@
 import { watchDevicePosition } from '@/lib/gps';
 import { useState, useEffect, useRef } from 'react';
 import { ChevronRight as ChevronIcon } from 'lucide-react';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   InputOTP,
@@ -18,7 +10,6 @@ import {
 } from '@/components/ui/input-otp';
 import {
   Plus,
-  Download,
   ArrowLeft,
   ShieldCheck,
   MapPin,
@@ -34,11 +25,12 @@ import {
 } from 'lucide-react';
 import { Heading, type ViewProps } from './dashboard';
 import { Badge, Avatar } from './shell';
-import { EmptyState, SearchBox, exportCSV } from './controls';
+import { EmptyState } from './controls';
 import { RideMap } from './ride-map';
 import { TripScreen } from './consumer';
 import { type Ride, time, date, active } from '@/lib/types';
 import type { Commit } from './dialogs';
+import { RideLedger, RideFacts } from './service-hours';
 export function Rides({
   state,
   open,
@@ -46,19 +38,15 @@ export function Rides({
   selected,
   commit,
 }: { selected?: string; commit: Commit } & ViewProps) {
-  const [filter, setFilter] = useState('upcoming'),
-    [q, setQ] = useState('');
+  const [filter, setFilter] = useState('upcoming');
   const ride = state.rides.find((r) => r.id === selected);
   const list = state.rides
     .filter(
       (r) =>
-        (filter === 'all' ||
-          (filter === 'history'
-            ? ['completed', 'cancelled'].includes(r.status)
-            : !['completed', 'cancelled'].includes(r.status))) &&
-        `${r.id} ${r.activity} ${state.families.find((f) => f.id === r.familyId)?.student} ${state.drivers.find((d) => d.id === r.driverId)?.name}`
-          .toLowerCase()
-          .includes(q.toLowerCase()),
+        filter === 'all' ||
+        (filter === 'history'
+          ? ['completed', 'cancelled'].includes(r.status)
+          : !['completed', 'cancelled'].includes(r.status)),
     )
     .sort((a, b) =>
       filter === 'history'
@@ -86,241 +74,81 @@ export function Rides({
     return (
       <RideDetail {...{ state, open, navigate, ride, commit }} key={ride.id} />
     );
-  if (state.role !== 'admin')
-    return (
-      <>
-        <Heading
-          title="Your activity"
-          description="Upcoming rides and everywhere you’ve been."
-        >
-          {state.role === 'family' && (
-            <button
-              className="btn primary"
-              onClick={() => navigate('overview')}
-            >
-              <Plus />
-              Plan a ride
-            </button>
-          )}
-        </Heading>
-        <div className="toolbar">
-          <Tabs value={filter} onValueChange={(v) => setFilter(String(v))}>
-            <TabsList style={{ height: 42 }}>
-              <TabsTrigger value="upcoming" style={{ padding: '8px 16px' }}>
-                Upcoming
-              </TabsTrigger>
-              <TabsTrigger value="history" style={{ padding: '8px 16px' }}>
-                Past rides
-              </TabsTrigger>
-              <TabsTrigger value="all" style={{ padding: '8px 16px' }}>
-                All
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-        <div className="consumer-ride-list">
-          {list.map((r) => (
-            <button
-              className="consumer-ride-card"
-              key={r.id}
-              onClick={() => navigate('rides', r.id)}
-            >
-              <header>
-                <span className="place-icon">
-                  <CarFront />
-                </span>
-                <div>
-                  <h3>{r.activity}</h3>
-                  <small>
-                    {date(r.scheduledAt)} · {time(r.scheduledAt)} CT
-                  </small>
-                </div>
-                <ChevronIcon />
-              </header>
-              <div className="compact-route">
-                <div>
-                  <i className="route-dot" />
-                  {state.anchors.find((a) => a.id === r.pickupId)?.name}
-                </div>
-                <div>
-                  <i className="route-square" />
-                  {state.anchors.find((a) => a.id === r.dropoffId)?.name}
-                </div>
-              </div>
-              <footer>
-                <Badge value={r.status} />
-                <span>
-                  {state.drivers.find((d) => d.id === r.driverId)?.name ??
-                    'Awaiting a match'}
-                </span>
-              </footer>
-            </button>
-          ))}
-        </div>
-        {!list.length && (
-          <EmptyState
-            title="No rides here yet"
-            description="Your trips will appear here as your community gets moving."
-          />
-        )}
-      </>
-    );
+  if (state.role === 'admin')
+    return <RideLedger {...{ state, open, navigate }} />;
   return (
     <>
       <Heading
-        title={state.role === 'admin' ? 'Ride coordination' : 'My rides'}
-        description={
-          state.role === 'admin'
-            ? 'From the first request to a safe arrival. Keep every journey in view.'
-            : 'Your upcoming journeys and the places you’ve been.'
-        }
+        title="Your activity"
+        description="Upcoming and completed rides."
       >
-        <button
-          className="btn"
-          disabled={!list.length}
-          onClick={() =>
-            exportCSV(
-              'kinetic-youth-rides.csv',
-              list.map((r) => ({
-                'Ride ID': r.id,
-                Student: state.families.find((f) => f.id === r.familyId)
-                  ?.student,
-                Driver:
-                  state.drivers.find((d) => d.id === r.driverId)?.name ??
-                  'Unassigned',
-                Pickup: state.anchors.find((a) => a.id === r.pickupId)?.name,
-                Destination: state.anchors.find((a) => a.id === r.dropoffId)
-                  ?.name,
-                Scheduled: r.scheduledAt,
-                Status: r.status,
-                Activity: r.activity,
-                Rating: r.rating ?? '',
-              })),
-            )
-          }
-        >
-          <Download />
-          Export rides
-        </button>
-        {
-          <button
-            className="btn primary"
-            onClick={() => open({ kind: 'ride' })}
-          >
+        {state.role === 'family' && (
+          <button className="btn primary" onClick={() => navigate('overview')}>
             <Plus />
-            {state.role === 'admin' ? 'Schedule a ride' : 'Request a ride'}
+            Plan a ride
           </button>
-        }
+        )}
       </Heading>
       <div className="toolbar">
         <Tabs value={filter} onValueChange={(v) => setFilter(String(v))}>
-          <TabsList style={{ height: 40 }}>
-            <TabsTrigger value="upcoming" style={{ padding: '7px 14px' }}>
-              Upcoming & active
+          <TabsList style={{ height: 42 }}>
+            <TabsTrigger value="upcoming" style={{ padding: '8px 16px' }}>
+              Upcoming
             </TabsTrigger>
-            <TabsTrigger value="history" style={{ padding: '7px 14px' }}>
-              History
+            <TabsTrigger value="history" style={{ padding: '8px 16px' }}>
+              Past rides
             </TabsTrigger>
-            <TabsTrigger value="all" style={{ padding: '7px 14px' }}>
-              All rides
+            <TabsTrigger value="all" style={{ padding: '8px 16px' }}>
+              All
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchBox
-          value={q}
-          onChange={setQ}
-          placeholder="Search rides, students, drivers"
+      </div>
+      <div className="consumer-ride-list">
+        {list.map((r) => (
+          <button
+            className="consumer-ride-card"
+            key={r.id}
+            onClick={() => navigate('rides', r.id)}
+          >
+            <header>
+              <span className="place-icon">
+                <CarFront />
+              </span>
+              <div>
+                <h3>{r.activity}</h3>
+                <small>
+                  {date(r.scheduledAt)} · {time(r.scheduledAt)} CT
+                </small>
+              </div>
+              <ChevronIcon />
+            </header>
+            <div className="compact-route">
+              <div>
+                <i className="route-dot" />
+                {state.anchors.find((a) => a.id === r.pickupId)?.name}
+              </div>
+              <div>
+                <i className="route-square" />
+                {state.anchors.find((a) => a.id === r.dropoffId)?.name}
+              </div>
+            </div>
+            <footer>
+              <Badge value={r.status} />
+              <span>
+                {state.drivers.find((d) => d.id === r.driverId)?.name ??
+                  'Awaiting a match'}
+              </span>
+            </footer>
+          </button>
+        ))}
+      </div>
+      {!list.length && (
+        <EmptyState
+          title="No rides here yet"
+          description="Scheduled rides appear here."
         />
-      </div>
-      <div className="table-panel">
-        <Table className="data-table">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Student / activity</TableHead>
-              <TableHead>Pickup & destination</TableHead>
-              <TableHead>Scheduled · Central</TableHead>
-              <TableHead>Driver</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {list.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell>
-                  <div className="name-cell">
-                    <Avatar
-                      name={
-                        state.families.find((f) => f.id === r.familyId)
-                          ?.student ?? 'Student'
-                      }
-                    />
-                    <span>
-                      <strong>
-                        {
-                          state.families.find((f) => f.id === r.familyId)
-                            ?.student
-                        }
-                      </strong>
-                      <small>{r.activity}</small>
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="queue-route">
-                    <i className="route-dot" />
-                    <span>
-                      {state.anchors.find((a) => a.id === r.pickupId)?.name}
-                    </span>
-                    <i className="route-square" />
-                    <span>
-                      {state.anchors.find((a) => a.id === r.dropoffId)?.name}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {time(r.scheduledAt)}
-                  <small
-                    className="muted"
-                    style={{ display: 'block', marginTop: 5 }}
-                  >
-                    {date(r.scheduledAt)}
-                  </small>
-                </TableCell>
-                <TableCell>
-                  {state.drivers.find((d) => d.id === r.driverId)?.name ?? (
-                    <span style={{ color: '#ab7a2b' }}>Needs matching</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge value={r.status} />
-                </TableCell>
-                <TableCell>
-                  <button
-                    className="btn small"
-                    onClick={() => navigate('rides', r.id)}
-                  >
-                    View ride
-                    <ArrowRight size={13} />
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {!list.length && (
-          <EmptyState
-            title="No rides here yet"
-            description={
-              q
-                ? 'Try a different search.'
-                : 'Requests and ride updates will appear here.'
-            }
-            action="Request a ride"
-            onAction={() => open({ kind: 'ride' })}
-          />
-        )}
-      </div>
+      )}
     </>
   );
 }
@@ -441,10 +269,22 @@ function RideDetail({
       </Heading>
       <div className="journey">
         <div>
+          <RideFacts ride={ride} />
+          {state.role === 'admin' && ride.status === 'completed' && (
+            <div className="section-foot">
+              <span>
+                Service credit is reviewed separately from recorded trip time.
+              </span>
+              <button className="text-link" onClick={() => navigate('hours')}>
+                Review service hours
+                <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
           <section className="panel">
             <div className="panel-heading">
               <div>
-                <h2>Your route</h2>
+                <h2>Route</h2>
                 <p>
                   {route
                     ? `${(route.distance / 1609.344).toFixed(1)} mi · about ${Math.ceil(route.duration / 60)} min driving`
@@ -478,12 +318,14 @@ function RideDetail({
                     ? `Last reported ${time(ride.locationAt)}`
                     : 'No GPS position received'}
               </span>
-              <span>Route estimate · no traffic data</span>
+              <span>
+                {state.demo ? 'Practice route estimate' : 'Road route estimate'}
+              </span>
             </div>
           </section>
           <section className="panel" style={{ marginTop: 20 }}>
             <div className="panel-heading">
-              <h2>The meeting plan</h2>
+              <h2>Meeting points</h2>
               <MapPin size={18} />
             </div>
             <div className="detail-body">
@@ -616,7 +458,7 @@ function RideDetail({
                   ) : (
                     <span
                       style={{
-                        border: '1px solid #d8e2e7',
+                        border: '1px solid #e0e0e0',
                         width: 19,
                         height: 19,
                         borderRadius: '50%',
@@ -645,7 +487,7 @@ function RideDetail({
                   style={{
                     marginTop: 18,
                     paddingTop: 18,
-                    borderTop: '1px solid #e5ebee',
+                    borderTop: '1px solid #eaeaea',
                   }}
                 >
                   <strong style={{ fontSize: 14 }}>Your pickup code</strong>
@@ -684,7 +526,7 @@ function RideDetail({
                   style={{
                     marginTop: 17,
                     paddingTop: 17,
-                    borderTop: '1px solid #e8edef',
+                    borderTop: '1px solid #ececec',
                   }}
                 >
                   {status === 'pending' && (
@@ -799,7 +641,7 @@ function RideDetail({
               {status === 'completed' &&
                 (ride.rating ? (
                   <div className="notice" style={{ marginTop: 15 }}>
-                    <Star fill="#2b977e" />
+                    <Star fill="#7e7e7e" />
                     {ride.rating}/5 ·{' '}
                     {ride.feedback || 'Thanks for riding with us.'}
                   </div>
@@ -828,7 +670,7 @@ function RideDetail({
               {['pending', 'accepted', 'arrived'].includes(status) && (
                 <button
                   className="text-link"
-                  style={{ color: '#ad5660', marginTop: 18 }}
+                  style={{ color: '#696969', marginTop: 18 }}
                   disabled={busy}
                   onClick={() => open({ kind: 'cancel', ride })}
                 >

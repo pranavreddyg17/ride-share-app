@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { sampleData } from './seed';
 import { notificationStatements } from './notifications';
+import { approvedMinutes } from './service-hours';
 import {
   DEFAULT_SLOTS,
   type Role,
@@ -11,6 +12,7 @@ import {
   type Ride,
   type Anchor,
   type Settings,
+  type ServiceCredit,
 } from './types';
 export class ApiError extends Error {
   constructor(
@@ -280,7 +282,7 @@ async function audit(
     )
     .bind(c.workspace, uid(), rideId, kind, message, now());
   (c.writes.length ? c.after : c.writes).push(statement);
-  if (rideId && !c.demo)
+  if (rideId && !c.demo && ['ride', 'sos'].includes(kind))
     c.after.push(...notificationStatements(c.workspace, rideId, kind));
 }
 async function save(
@@ -391,6 +393,7 @@ async function saveRide(c: Context, r: Ride, version: number | null) {
   );
 }
 export async function state(c: Context): Promise<State> {
+  const credits = await list<ServiceCredit>(c, 'credits');
   const [drivers, families, rides, anchors, eventResult, ws, memberResult] =
     await Promise.all([
       list<Driver>(c, 'drivers'),
@@ -452,6 +455,7 @@ export async function state(c: Context): Promise<State> {
       const rated = completed.filter((r) => r.rating);
       const summary = {
         ...d,
+        creditedHours: approvedMinutes(credits, d.id) / 60,
         rides: completed.length,
         hours: completed.reduce(
           (n, r) =>
@@ -468,6 +472,7 @@ export async function state(c: Context): Promise<State> {
       if (c.role === 'family')
         return {
           ...summary,
+          creditedHours: undefined,
           dob: '',
           email: '',
           licenseExpiry: '',
@@ -483,6 +488,11 @@ export async function state(c: Context): Promise<State> {
     recordId: c.recordId,
     name: c.name,
     email: c.email,
+    credits: credits.filter(
+      (credit) =>
+        c.role === 'admin' ||
+        (c.role === 'driver' && credit.driverId === c.recordId),
+    ),
     drivers: visibleDrivers,
     families: families
       .filter(
@@ -513,7 +523,9 @@ export async function state(c: Context): Promise<State> {
       .filter(
         (e) =>
           c.role === 'admin' ||
-          (e.ride_id && visibleRides.some((r) => r.id === e.ride_id)),
+          (e.ride_id &&
+            visibleRides.some((r) => r.id === e.ride_id) &&
+            !(e.kind === 'service_credit' && c.role === 'family')),
       )
       .map((e) => ({
         id: e.id,
@@ -818,6 +830,9 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       updatedAt: now(),
       startedAt: null,
       completedAt: null,
+      acceptedAt: null,
+      arrivedAt: null,
+      cancelledAt: null,
       otp: null,
       otpExpiresAt: null,
       otpAttempts: 0,
@@ -854,6 +869,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         throw new ApiError(409, 'Only unstarted rides can be assigned.');
       r.driverId = txt(body.driverId);
       r.status = 'pending';
+      r.acceptedAt = null;
       clearLocation(c, r);
       message = 'Driver assigned. Their confirmation is needed.';
     } else if (action === 'decline') {
@@ -862,6 +878,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         throw new ApiError(409, 'Only unstarted requests can be declined.');
       const reason = txt(body.reason, 4, 500);
       r.driverId = null;
+      r.acceptedAt = null;
       r.status = 'pending';
       clearLocation(c, r);
       message = `Driver declined: ${reason}. Coordinator reassignment is needed.`;
@@ -870,6 +887,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       if (r.status !== 'pending')
         throw new ApiError(409, 'This ride is not awaiting confirmation.');
       r.status = 'accepted';
+      r.acceptedAt = now();
       message = 'Ride confirmed by the driver.';
     } else if (action === 'arrive') {
       requireRole(c, 'driver');
@@ -882,6 +900,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         );
       if (!c.demo) await requireProximity(c, r, 'pickup');
       r.status = 'arrived';
+      r.arrivedAt = now();
       const buffer = new Uint32Array(1);
       crypto.getRandomValues(buffer);
       r.otp = String(buffer[0] % 1000000).padStart(6, '0');
@@ -948,6 +967,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         throw new ApiError(409, 'This ride can no longer be cancelled.');
       r.cancelReason = txt(body.reason, 4, 500);
       r.status = 'cancelled';
+      r.cancelledAt = now();
       r.otp = null;
       r.otpExpiresAt = null;
       message = `Ride cancelled by ${c.name}: ${r.cancelReason}`;
@@ -979,6 +999,83 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
     await saveRide(c, r, version);
     await audit(c, message, 'ride', r.id);
     return { message };
+  }
+  if (op === 'credit.review') {
+    requireRole(c, 'admin');
+    const { data: ride, version: rideVersion } = await record<Ride>(
+      c,
+      'rides',
+      txt(body.id),
+    );
+    if (ride.status !== 'completed' || !ride.driverId)
+      throw new ApiError(
+        409,
+        'Service credit requires a completed ride with a driver.',
+      );
+    const status = txt(body.status);
+    if (!['approved', 'excluded'].includes(status))
+      throw new ApiError(400, 'Choose approve or exclude.');
+    const minutes = number(body.minutes, 0, 1440);
+    if (!Number.isInteger(minutes) || (status === 'excluded' && minutes !== 0))
+      throw new ApiError(
+        400,
+        'Use whole minutes. Excluded rides must have zero credited minutes.',
+      );
+    const expected = number(body.revision, 0, 1000000);
+    const existing = await db()
+      .prepare(
+        "SELECT data,version FROM records WHERE workspace=? AND kind='credits' AND id=?",
+      )
+      .bind(c.workspace, ride.id)
+      .first<{ data: string; version: number }>();
+    const previous = existing
+      ? (JSON.parse(existing.data) as ServiceCredit)
+      : null;
+    if (expected !== (previous?.revision ?? 0))
+      throw new ApiError(
+        409,
+        'This service credit was reviewed by another coordinator. Refresh before saving.',
+      );
+    const review: ServiceCredit = {
+      id: ride.id,
+      rideId: ride.id,
+      driverId: ride.driverId,
+      minutes,
+      status: status as ServiceCredit['status'],
+      reason: txt(body.reason, 4, 500),
+      reviewedBy: c.email,
+      reviewedAt: now(),
+      revision: (previous?.revision ?? 0) + 1,
+    };
+    await save(
+      c,
+      'credits',
+      ride.id,
+      review,
+      existing?.version ?? null,
+      "EXISTS (SELECT 1 FROM records WHERE workspace=? AND kind='rides' AND id=? AND version=? AND json_extract(data,'$.status')='completed' AND json_extract(data,'$.driverId')=?)",
+      [c.workspace, ride.id, rideVersion, ride.driverId],
+    );
+    // Append the complete decision in the same transaction as the current credit.
+    c.after.push(
+      db()
+        .prepare(
+          'INSERT INTO records (workspace,kind,id,data) VALUES (?,?,?,?)',
+        )
+        .bind(
+          c.workspace,
+          'credit_reviews',
+          `${ride.id}:${review.revision}`,
+          JSON.stringify(review),
+        ),
+    );
+    await audit(
+      c,
+      `${c.name} ${previous ? 'revised' : 'reviewed'} service credit: ${previous?.minutes ?? 0} → ${minutes} minutes (${status}). ${review.reason}`,
+      'service_credit',
+      ride.id,
+    );
+    return { message: 'Service credit recorded.' };
   }
   if (op === 'location') {
     requireRole(c, 'driver');

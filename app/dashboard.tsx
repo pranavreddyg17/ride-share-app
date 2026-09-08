@@ -1,23 +1,18 @@
 'use client';
+import { useState } from 'react';
+import { ArrowRight, ArrowUpRight, Plus, Download } from 'lucide-react';
 import {
-  CarFront,
-  Route,
-  Users,
-  ShieldCheck,
-  Plus,
-  ArrowRight,
-  Clock,
-  CalendarDays,
-  ArrowUpRight,
-  Check,
-  MapPin,
-  Play,
-  GraduationCap,
-} from 'lucide-react';
-import { Avatar, Badge } from './shell';
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
+import { Badge } from './shell';
 import { RideMap } from './ride-map';
-import { EmptyState } from './controls';
-import { type State, type Ride, time, date, dateKey } from '@/lib/types';
+import { type State, time, dateKey, active } from '@/lib/types';
+import { approvedMinutes, durationLabel } from '@/lib/service-hours';
 import type { Modal } from './dialogs';
 export type ViewProps = {
   state: State;
@@ -30,391 +25,323 @@ export function Heading({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children?: React.ReactNode;
 }) {
   return (
     <div className="page-heading">
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       <div className="actions">{children}</div>
     </div>
   );
 }
-export function RideQueue({
-  ride,
-  state,
-  onOpen,
-}: {
-  ride: Ride;
-  state: State;
-  onOpen: () => void;
-}) {
-  const f = state.families.find((f) => f.id === ride.familyId),
-    d = state.drivers.find((d) => d.id === ride.driverId);
-  return (
-    <button
-      className="queue-card"
-      style={{
-        display: 'block',
-        width: '100%',
-        background: 'transparent',
-        textAlign: 'left',
-        borderLeft: 0,
-        borderRight: 0,
-        borderBottom: 0,
-      }}
-      onClick={onOpen}
-    >
-      <div className="queue-head">
-        <strong>
-          {time(ride.scheduledAt)}{' '}
-          <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>
-            {date(ride.scheduledAt)}
-          </span>
-        </strong>
-        <Badge value={ride.status} />
-      </div>
-      <div className="queue-route">
-        <i className="route-dot" />
-        <span>{state.anchors.find((a) => a.id === ride.pickupId)?.name}</span>
-        <i className="route-square" />
-        <span>{state.anchors.find((a) => a.id === ride.dropoffId)?.name}</span>
-      </div>
-      <div className="queue-person">
-        <span>
-          <Avatar name={f?.student ?? 'Student'} />
-          {f?.student ?? 'Student'}
-        </span>
-        <span>
-          {d?.name.split(' ')[0] ?? 'Needs driver'}
-          <ArrowUpRight size={14} />
-        </span>
-      </div>
-    </button>
-  );
-}
 export function Dashboard({ state, open, navigate }: ViewProps) {
-  const today = state.rides.filter(
-    (r) => dateKey(r.scheduledAt) === dateKey(state.serverTime),
-  );
-  const activeRides = state.rides.filter(
-    (r) => r.status === 'in_progress' || r.status === 'arrived',
-  );
-  const pendingDrivers = state.drivers.filter((d) => d.status === 'review');
-  const upcoming = state.rides
-    .filter(
-      (r) => !['completed', 'cancelled', 'in_progress'].includes(r.status),
-    )
+  const [day, setDay] = useState(dateKey(state.serverTime));
+  const [focus, setFocus] = useState<string>();
+  const schedule = state.rides
+    .filter((r) => dateKey(r.scheduledAt) === day)
     .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-  const completed = state.rides.filter((r) => r.status === 'completed');
-  const liveRide =
-    activeRides[0] ?? upcoming.find((r) => r.driverId) ?? upcoming[0];
-  const stats =
-    state.role === 'admin'
-      ? [
-          {
-            label: 'Rides today',
-            n: today.length,
-            sub: `${today.filter((r) => r.status === 'completed').length} completed today`,
-            I: Route,
-          },
-          {
-            label: 'Active rides',
-            n: activeRides.length,
-            sub: state.demo ? 'Practice journeys' : 'At pickup or on the road',
-            I: CarFront,
-          },
-          {
-            label: 'Approved drivers',
-            n: state.drivers.filter((d) => d.status === 'approved').length,
-            sub: `${pendingDrivers.length} awaiting your review`,
-            I: ShieldCheck,
-          },
-          {
-            label: 'Pilot families',
-            n: state.families.length,
-            sub: 'Connected to the community',
-            I: Users,
-          },
-        ]
-      : [
-          {
-            label: 'Upcoming rides',
-            n: upcoming.length,
-            sub: 'A little planning goes a long way',
-            I: CalendarDays,
-          },
-          {
-            label: 'Active rides',
-            n: activeRides.length,
-            sub: 'Follow the journey below',
-            I: CarFront,
-          },
-          {
-            label: 'Completed rides',
-            n: completed.length,
-            sub: 'More doors opened',
-            I: Route,
-          },
-          {
-            label:
-              state.role === 'driver' ? 'Volunteer hours' : 'Linked students',
-            n:
-              state.role === 'driver'
-                ? (state.drivers[0]?.hours ?? 0).toFixed(1)
-                : state.families.length,
-            sub:
-              state.role === 'driver'
-                ? 'From completed ride times'
-                : 'Your family, connected',
-            I: GraduationCap,
-          },
-        ];
+  const live = state.rides.filter((r) => active(r.status));
+  const matching = state.rides.filter(
+    (r) => r.status === 'pending' && !r.driverId,
+  );
+  const review = state.rides.filter(
+    (r) =>
+      r.status === 'completed' && !state.credits.some((c) => c.rideId === r.id),
+  );
+  const driverReview = state.drivers.filter((d) => d.status === 'review');
+  const help = state.events.filter((e) => e.kind === 'sos' && !e.resolved);
+  const selected = live.find((r) => r.id === focus) ?? live[0];
   return (
     <>
-      <Heading
-        title={
-          state.role === 'admin'
-            ? 'Pilot overview'
-            : state.role === 'driver'
-              ? `Your next good turn, ${state.name.split(' ')[0]}.`
-              : `Let’s get there, ${state.name.split(' ')[0]}.`
-        }
-        description={
-          state.role === 'admin'
-            ? 'Keep your community moving, one coordinated ride at a time.'
-            : state.role === 'driver'
-              ? 'Your schedule, your rides, and the students counting on you.'
-              : 'Plan a ride and stay connected through every step of the journey.'
-        }
-      >
-        {state.demo && (
-          <button className="btn" onClick={() => open({ kind: 'tour' })}>
-            <Play />
-            Try the ride flow
-          </button>
-        )}
-        {state.role !== 'driver' && (
-          <button
-            className="btn primary"
-            onClick={() => open({ kind: 'ride' })}
-          >
-            <Plus />
-            {state.role === 'family' ? 'Request a ride' : 'Schedule a ride'}
-          </button>
-        )}
+      <Heading title="Dispatch" description="North Texas · Central Time">
+        <button className="btn" onClick={() => navigate('reports')}>
+          <Download />
+          Export records
+        </button>
+        <button className="btn primary" onClick={() => open({ kind: 'ride' })}>
+          <Plus />
+          Schedule ride
+        </button>
       </Heading>
-      <div className="stats">
-        {stats.map((s) => (
-          <div className="stat" key={s.label}>
-            <div className="stat-top">
-              {s.label}
-              <span className="stat-icon">
-                <s.I />
+      <div className="operations-metrics">
+        <button onClick={() => navigate('rides')}>
+          <span>Scheduled today</span>
+          <strong>
+            {
+              state.rides.filter(
+                (r) => dateKey(r.scheduledAt) === dateKey(state.serverTime),
+              ).length
+            }
+          </strong>
+        </button>
+        <button onClick={() => navigate('rides')}>
+          <span>Active rides</span>
+          <strong>
+            {live.length}
+            <i className="metric-pulse" />
+          </strong>
+        </button>
+        <button onClick={() => navigate('rides')}>
+          <span>Need a driver</span>
+          <strong>{matching.length}</strong>
+        </button>
+        <button onClick={() => navigate('hours')}>
+          <span>Hours to review</span>
+          <strong>
+            {review.length}
+            <small>rides</small>
+          </strong>
+        </button>
+        <button onClick={() => navigate('hours')}>
+          <span>Approved service</span>
+          <strong>
+            {(approvedMinutes(state.credits) / 60).toFixed(1)}
+            <small>hr</small>
+          </strong>
+        </button>
+      </div>
+      <div className="dispatch-layout">
+        <section className="dispatch-schedule">
+          <div className="section-head">
+            <h2>Ride schedule</h2>
+            <label className="compact-date">
+              Date
+              <input
+                aria-label="Schedule date"
+                type="date"
+                value={day}
+                onChange={(e) => setDay(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="table-panel">
+            <Table className="data-table dispatch-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pickup / CT</TableHead>
+                  <TableHead>Student & route</TableHead>
+                  <TableHead>Driver</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Open ride</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {schedule.map((ride) => {
+                  const family = state.families.find(
+                    (f) => f.id === ride.familyId,
+                  );
+                  const driver = state.drivers.find(
+                    (d) => d.id === ride.driverId,
+                  );
+                  return (
+                    <TableRow key={ride.id}>
+                      <TableCell className="schedule-time">
+                        <strong>{time(ride.scheduledAt)}</strong>
+                        <small className="mono">{ride.id}</small>
+                      </TableCell>
+                      <TableCell>
+                        <strong>{family?.student ?? 'Student'}</strong>
+                        <small className="table-route">
+                          {ride.pickupSnapshot?.name ??
+                            state.anchors.find((a) => a.id === ride.pickupId)
+                              ?.name}
+                          <ArrowRight size={12} />
+                          {ride.dropoffSnapshot?.name ??
+                            state.anchors.find((a) => a.id === ride.dropoffId)
+                              ?.name}
+                        </small>
+                      </TableCell>
+                      <TableCell>
+                        {driver?.name ??
+                          (ride.status === 'pending' ? (
+                            <button
+                              className="text-link"
+                              onClick={() => open({ kind: 'assign', ride })}
+                            >
+                              Assign driver
+                            </button>
+                          ) : (
+                            '—'
+                          ))}
+                      </TableCell>
+                      <TableCell>
+                        <Badge value={ride.status} />
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          className="icon-btn"
+                          aria-label={`Open ${ride.id}`}
+                          onClick={() => navigate('rides', ride.id)}
+                        >
+                          <ArrowUpRight size={18} />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          {!schedule.length && (
+            <div className="plain-empty">
+              <strong>No rides on this date</strong>
+              <p>Choose another date or schedule a ride.</p>
+            </div>
+          )}
+          <div className="section-foot">
+            <span>
+              {schedule.length} rides ·{' '}
+              {schedule.filter((r) => r.status === 'completed').length}{' '}
+              completed
+            </span>
+            <button className="text-link" onClick={() => navigate('rides')}>
+              Full ride ledger
+              <ArrowRight size={15} />
+            </button>
+          </div>
+          <section className="action-register">
+            <div className="section-head">
+              <h2>Needs attention</h2>
+              <span>
+                {matching.length +
+                  review.length +
+                  driverReview.length +
+                  help.length}{' '}
+                items
               </span>
             </div>
-            <div className="stat-value">{s.n}</div>
-            <div className="stat-sub">{s.sub}</div>
-          </div>
-        ))}
-      </div>
-      {state.role === 'driver' && state.drivers[0]?.status !== 'approved' && (
-        <div className="notice warning" style={{ marginBottom: 22 }}>
-          <ShieldCheck />
-          Your profile needs coordinator review before you can accept rides.{' '}
-          <button className="text-link" onClick={() => navigate('profile')}>
-            View profile
-          </button>
-        </div>
-      )}
-      <div className="dash-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>
-                {activeRides.length
-                  ? 'On the move'
-                  : 'Your community, connected'}
-              </h2>
-              <p>Flower Mound & the surrounding community</p>
-            </div>
-            {liveRide ? (
+            {[
+              {
+                title: 'Unassigned requests',
+                detail: 'Choose a driver for each request',
+                count: matching.length,
+                page: 'rides',
+              },
+              {
+                title: 'Service credit review',
+                detail: 'Arrival-to-drop-off time, including waiting',
+                count: review.length,
+                page: 'hours',
+              },
+              {
+                title: 'Driver applications',
+                detail: 'Review documents and eligibility',
+                count: driverReview.length,
+                page: 'drivers',
+              },
+              {
+                title: 'Open help requests',
+                detail: 'Coordinator follow-up required',
+                count: help.length,
+                page: 'safety',
+              },
+            ].map((item) => (
               <button
-                className="text-link"
-                onClick={() => navigate('rides', liveRide.id)}
+                className="action-register-row"
+                key={item.page}
+                onClick={() => navigate(item.page)}
               >
-                View ride
-                <ArrowUpRight />
-              </button>
-            ) : (
-              <span className="badge teal">Community map</span>
-            )}
-          </div>
-          <RideMap
-            anchors={state.anchors}
-            ride={liveRide}
-            demo={state.demo}
-            role={state.role}
-          />
-          <div className="map-foot">
-            <span>
-              <i className="dot" style={{ color: '#169682' }} />
-              {state.demo
-                ? 'Sample position · practice ride'
-                : liveRide?.locationAt
-                  ? `Last GPS update ${time(liveRide.locationAt)}`
-                  : 'Waiting for driver location'}
-            </span>
-            <span>
-              <MapPin size={12} />
-              North Texas
-            </span>
-          </div>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Coming up next</h2>
-              <p>
-                {upcoming.length} upcoming{' '}
-                {upcoming.length === 1 ? 'ride' : 'rides'}
-              </p>
-            </div>
-            <Clock size={17} color="#7f95a0" />
-          </div>
-          <div className="ride-queue">
-            {upcoming.slice(0, 2).map((r) => (
-              <RideQueue
-                key={r.id}
-                ride={r}
-                state={state}
-                onOpen={() => navigate('rides', r.id)}
-              />
-            ))}
-            {!upcoming.length && (
-              <EmptyState
-                title="A clear schedule"
-                description="Your upcoming rides will appear here."
-              />
-            )}
-          </div>
-          <div style={{ padding: '15px 21px', borderTop: '1px solid #e7edf0' }}>
-            <button className="text-link" onClick={() => navigate('rides')}>
-              View all rides
-              <ArrowRight />
-            </button>
-          </div>
-        </section>
-      </div>
-      <div className="bottom-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>
-              {state.role === 'admin' ? 'Driver approvals' : 'Recent rides'}{' '}
-              {state.role === 'admin' && pendingDrivers.length > 0 && (
-                <span className="badge amber" style={{ marginLeft: 6 }}>
-                  {pendingDrivers.length}
+                <span className="action-count mono">
+                  {String(item.count).padStart(2, '0')}
                 </span>
-              )}
-            </h2>
-            <button
-              className="text-link"
-              onClick={() =>
-                navigate(state.role === 'admin' ? 'drivers' : 'rides')
-              }
-            >
-              {state.role === 'admin' ? 'View register' : 'Ride history'}
-              <ArrowRight />
-            </button>
-          </div>
-          {state.role === 'admin'
-            ? pendingDrivers.slice(0, 2).map((d) => (
-                <div className="approval-row" key={d.id}>
-                  <Avatar name={d.name} alt />
-                  <div>
-                    <strong>{d.name}</strong>
-                    <p>{d.school} · Application submitted</p>
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => open({ kind: 'driver', driver: d })}
-                  >
-                    Review
-                  </button>
+                <div>
+                  <strong>{item.title}</strong>
+                  <span>{item.detail}</span>
                 </div>
-              ))
-            : completed.slice(0, 2).map((r) => (
-                <div className="approval-row" key={r.id}>
-                  <span className="stat-icon">
-                    <Check size={18} />
-                  </span>
+                <ArrowUpRight size={18} />
+              </button>
+            ))}
+          </section>
+        </section>
+        <aside className="dispatch-aside">
+          <section className="dispatch-map">
+            <div className="section-head">
+              <h2>Active trips</h2>
+              <span className="mono">
+                {String(live.length).padStart(2, '0')}
+              </span>
+            </div>
+            <RideMap
+              anchors={state.anchors}
+              ride={selected}
+              demo={state.demo}
+              role={state.role}
+            />
+            <div className="active-trip-list">
+              {live.map((ride) => (
+                <button
+                  key={ride.id}
+                  className={selected?.id === ride.id ? 'selected' : ''}
+                  onClick={() => setFocus(ride.id)}
+                >
                   <div>
-                    <strong>{r.activity}</strong>
-                    <p>
-                      {date(r.scheduledAt)} ·{' '}
-                      {state.anchors.find((a) => a.id === r.dropoffId)?.name}
-                    </p>
+                    <strong>
+                      {state.drivers.find((d) => d.id === ride.driverId)
+                        ?.name ?? 'Driver'}
+                    </strong>
+                    <span className="mono">{ride.id}</span>
                   </div>
-                  <button
-                    className="btn small"
-                    onClick={() => navigate('rides', r.id)}
-                  >
-                    Details
-                  </button>
+                  <Badge value={ride.status} />
+                </button>
+              ))}
+            </div>
+            {selected ? (
+              <div className="section-foot">
+                <span>
+                  {selected.locationAt
+                    ? `GPS ${time(selected.locationAt)}`
+                    : 'No GPS received'}
+                </span>
+                <button
+                  className="text-link"
+                  onClick={() => navigate('rides', selected.id)}
+                >
+                  Track
+                  <ArrowUpRight size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="plain-empty">
+                <p>No active trips.</p>
+              </div>
+            )}
+          </section>
+          <section className="service-summary">
+            <div className="section-head">
+              <h2>Driver service</h2>
+              <button
+                aria-label="Open service hours"
+                className="icon-btn"
+                onClick={() => navigate('hours')}
+              >
+                <ArrowUpRight size={17} />
+              </button>
+            </div>
+            {state.drivers
+              .filter((d) => d.status === 'approved')
+              .slice(0, 4)
+              .map((driver) => (
+                <div className="service-summary-row" key={driver.id}>
+                  <div>
+                    <strong>{driver.name}</strong>
+                    <span>{driver.rides} completed rides</span>
+                  </div>
+                  <strong className="mono">
+                    {durationLabel(approvedMinutes(state.credits, driver.id))}
+                  </strong>
                 </div>
               ))}
-          {((state.role === 'admin' && !pendingDrivers.length) ||
-            (state.role !== 'admin' && !completed.length)) && (
-            <EmptyState
-              title={
-                state.role === 'admin'
-                  ? 'All caught up'
-                  : 'Your journey starts here'
-              }
-              description={
-                state.role === 'admin'
-                  ? 'New driver applications will appear here for review.'
-                  : 'Completed trips will be saved in your ride history.'
-              }
-            />
-          )}
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Latest activity</h2>
-            <button className="text-link" onClick={() => navigate('safety')}>
-              View all
-              <ArrowRight />
-            </button>
-          </div>
-          {state.events.slice(0, 3).map((e) => (
-            <div className="activity" key={e.id}>
-              <span className="event-icon">
-                {e.kind === 'driver' ? <ShieldCheck /> : <Route />}
-              </span>
-              <div style={{ lineHeight: 1.5 }}>
-                {e.message}
-                <small>
-                  {date(e.createdAt)} · {time(e.createdAt)}
-                </small>
-              </div>
-            </div>
-          ))}
-          {!state.events.length && (
-            <div className="activity">
-              <span className="event-icon">
-                <ShieldCheck />
-              </span>
-              <div>
-                Ready when you are.
-                <small>Ride updates and help requests will appear here.</small>
-              </div>
-            </div>
-          )}
-        </section>
+            <p>
+              Approved credit only. Recorded ride time is reviewed separately.
+            </p>
+          </section>
+        </aside>
       </div>
     </>
   );

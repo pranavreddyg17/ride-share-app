@@ -48,7 +48,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
     <>
       <Heading
         title="Driver register"
-        description="The people helping your community go further."
+        description="Driver records, eligibility reviews, and service totals."
       >
         <button
           className="btn"
@@ -69,7 +69,8 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                 'Consent reviewed': d.guardianConsent,
                 'Screening reviewed': d.screeningChecked,
                 Rides: d.rides,
-                'Volunteer hours': d.hours.toFixed(1),
+                'Recorded driving hours': d.hours.toFixed(2),
+                'Approved service hours': (d.creditedHours ?? 0).toFixed(2),
               })),
             )
           }
@@ -125,7 +126,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
               <TableHead>Status</TableHead>
               <TableHead>Vehicle</TableHead>
               <TableHead>License expires</TableHead>
-              <TableHead>Impact</TableHead>
+              <TableHead>Service record</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -169,7 +170,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                       new Date(Date.now() + 30 * 86400000)
                         .toISOString()
                         .slice(0, 10)
-                        ? '#b68132'
+                        ? '#878787'
                         : undefined,
                   }}
                 >
@@ -184,7 +185,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                     className="muted"
                     style={{ display: 'block', marginTop: 5, fontSize: 11 }}
                   >
-                    {d.hours.toFixed(1)} hrs ·{' '}
+                    {(d.creditedHours ?? 0).toFixed(2)} approved hrs ·{' '}
                     {d.rating ? d.rating.toFixed(1) + ' ★' : 'No ratings'}
                   </small>
                 </TableCell>
@@ -214,7 +215,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                     {d.status === 'approved' && (
                       <button
                         className="text-link"
-                        style={{ color: '#a85450' }}
+                        style={{ color: '#666666' }}
                         onClick={() =>
                           open({
                             kind: 'driver-status',
@@ -294,7 +295,7 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                 </div>
                 <div className="detail-pair">
                   <span>Email</span>
-                  <span style={{ color: '#24556b' }}>{detail.email}</span>
+                  <span style={{ color: '#4c4c4c' }}>{detail.email}</span>
                 </div>
                 <div className="detail-pair">
                   <span>Vehicle</span>
@@ -305,14 +306,14 @@ export function DriverRegister({ state, open, navigate }: ViewProps) {
                   {detail.plate}
                 </div>
                 <div className="detail-pair">
-                  <span>Volunteer hours</span>
-                  {detail.hours.toFixed(1)}
+                  <span>Approved service hours</span>
+                  {(detail.creditedHours ?? 0).toFixed(2)}
                 </div>
                 <h3 className="detail-title">Screening record</h3>
                 {DRIVER_CHECKS.map(([key, label]) => (
                   <div key={key} className="step-line">
                     {detail[key] ? (
-                      <Check style={{ color: '#19836e' }} />
+                      <Check style={{ color: '#6b6b6b' }} />
                     ) : (
                       <Clock />
                     )}
@@ -514,7 +515,7 @@ export function Anchors({ state, open }: ViewProps) {
     <>
       <Heading
         title="Anchor locations"
-        description="Familiar places to meet, learn, and get moving."
+        description="Manage approved pickup and drop-off locations."
       >
         {state.role === 'admin' && (
           <button

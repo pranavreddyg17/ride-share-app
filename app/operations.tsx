@@ -57,7 +57,7 @@ export function Safety({ state, open, navigate }: ViewProps) {
           {alerts.map((e) => (
             <div
               key={e.id}
-              style={{ padding: '18px 22px', borderTop: '1px solid #e5eaf0' }}
+              style={{ padding: '18px 22px', borderTop: '1px solid #e9e9e9' }}
             >
               <div
                 style={{
@@ -118,7 +118,7 @@ export function Safety({ state, open, navigate }: ViewProps) {
                 className="activity"
                 key={e.id}
                 style={{
-                  borderTop: '1px solid #ecf0f2',
+                  borderTop: '1px solid #efefef',
                   paddingTop: 17,
                   paddingBottom: 17,
                 }}
@@ -142,8 +142,8 @@ export function Safety({ state, open, navigate }: ViewProps) {
             ))}
             {!events.length && (
               <EmptyState
-                title="A fresh start"
-                description="Ride and registration events appear here as your pilot gets moving."
+                title="No activity recorded"
+                description="Ride updates, registrations, and credit reviews appear here."
               />
             )}
           </div>
@@ -464,7 +464,7 @@ export function Settings({
             style={{
               marginTop: 23,
               paddingTop: 23,
-              borderTop: '1px solid #e4ebed',
+              borderTop: '1px solid #eaeaea',
             }}
           >
             <h2>Sign-in</h2>
@@ -527,7 +527,7 @@ export function Settings({
                     {m.email !== state.email && (
                       <button
                         className="text-link"
-                        style={{ color: '#b24b58' }}
+                        style={{ color: '#626262' }}
                         onClick={() =>
                           open({ kind: 'member-remove', email: m.email })
                         }

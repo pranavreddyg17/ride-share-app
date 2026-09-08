@@ -13,7 +13,7 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import { Search, Plus, Route } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 export function Pick({
   value,
@@ -125,7 +125,6 @@ export function EmptyState({
   return (
     <Empty style={{ padding: '42px 20px' }}>
       <EmptyHeader>
-        <Route size={26} style={{ margin: '0 auto 12px', color: '#429f90' }} />
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>

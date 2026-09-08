@@ -632,7 +632,7 @@ export function AppDialog({
                 key={n}
                 onClick={() => setRating(n)}
               >
-                <Star fill={n <= rating ? '#e3b54d' : 'none'} size={30} />
+                <Star fill={n <= rating ? '#b7b7b7' : 'none'} size={30} />
               </button>
             ))}
           </fieldset>

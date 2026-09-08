@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Settings2,
   ChevronRight,
-  ArrowUpRight,
+  FileSpreadsheet,
   GraduationCap,
   LogOut,
 } from 'lucide-react';
@@ -27,30 +27,25 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Progress } from '@/components/ui/progress';
 import type { ReactNode } from 'react';
 export const sections = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'overview', label: 'Dispatch', icon: LayoutDashboard },
   { id: 'rides', label: 'Rides', icon: Route },
   { id: 'drivers', label: 'Driver register', icon: CarFront },
   { id: 'families', label: 'Families', icon: Users },
   { id: 'anchors', label: 'Anchor locations', icon: MapPin },
   { id: 'safety', label: 'Safety & activity', icon: ShieldCheck },
   { id: 'settings', label: 'Pilot settings', icon: Settings2 },
+  { id: 'hours', label: 'Service hours', icon: GraduationCap },
+  { id: 'reports', label: 'Reports & exports', icon: FileSpreadsheet },
 ];
 export function Brand() {
   return (
     <div className="brand">
-      <span className="brand-mark">
-        KY
-        <ArrowUpRight
-          size={17}
-          style={{ display: 'inline', marginLeft: 2, marginTop: -20 }}
-        />
-      </span>
+      <span className="brand-mark">ky.</span>
       <div>
-        <strong>kinetic youth</strong>
-        <small>YOUTH MOVING FORWARD</small>
+        <strong>Kinetic Youth</strong>
+        <small>TRANSPORTATION / SERVICE</small>
       </div>
     </div>
   );
@@ -68,7 +63,7 @@ export function Avatar({ name, alt = false }: { name: string; alt?: boolean }) {
 }
 export function Badge({ value }: { value: string }) {
   const names: Record<string, string> = {
-    pending: 'Needs matching',
+    pending: 'Pending',
     accepted: 'Confirmed',
     arrived: 'At pickup',
     in_progress: 'In progress',
@@ -101,7 +96,17 @@ function Navigation({
   const { setOpenMobile } = useSidebar();
   const opts =
     role === 'admin'
-      ? sections
+      ? [
+          sections[0],
+          sections[1],
+          sections[7],
+          sections[8],
+          sections[2],
+          sections[3],
+          sections[4],
+          sections[5],
+          sections[6],
+        ]
       : role === 'driver'
         ? [
             sections[0],
@@ -112,6 +117,7 @@ function Navigation({
               icon: GraduationCap,
             },
             { id: 'profile', label: 'Driver profile', icon: CarFront },
+            sections[7],
             sections[5],
           ]
         : [
@@ -149,7 +155,6 @@ export function Shell({
   name = 'Alex Morgan',
   demo = true,
   counts = {},
-  completed = 0,
   roleControl,
 }: {
   children: ReactNode;
@@ -184,6 +189,7 @@ export function Shell({
                     I: GraduationCap,
                   },
                   { id: 'profile', label: 'Account', I: Users },
+                  { id: 'hours', label: 'Service hours', I: GraduationCap },
                 ]
               : [
                   { id: 'overview', label: 'Ride', I: CarFront },
@@ -209,7 +215,7 @@ export function Shell({
         </header>
         {demo && (
           <div className="preview-toolbar">
-            <span>PRIVATE PILOT PREVIEW</span>
+            <span>PRACTICE</span>
             <span className="preview-explainer">Fictional people & rides</span>
             <div>{roleControl}</div>
           </div>
@@ -223,15 +229,15 @@ export function Shell({
     );
   return (
     <SidebarProvider
-      style={{ '--sidebar-width': '242px' } as React.CSSProperties}
+      style={{ '--sidebar-width': '224px' } as React.CSSProperties}
     >
       <Sidebar>
         <SidebarHeader style={{ padding: 0 }}>
           <Brand />
           <div className="pilot-place">
-            <MapPin size={18} color="#65cbbb" />
+            <MapPin size={18} />
             <div>
-              North Texas pilot<small>Marcus High School community</small>
+              North Texas<small>Community pilot</small>
             </div>
             <ChevronRight size={15} />
           </div>
@@ -239,7 +245,7 @@ export function Shell({
         <SidebarContent>
           <p className="nav-label">
             {role === 'admin'
-              ? 'PILOT WORKSPACE'
+              ? 'OPERATIONS'
               : role === 'driver'
                 ? 'DRIVER WORKSPACE'
                 : 'FAMILY WORKSPACE'}
@@ -247,27 +253,6 @@ export function Shell({
           <Navigation {...{ page, onNavigate, role, counts }} />
         </SidebarContent>
         <SidebarFooter style={{ padding: 0 }}>
-          <div className="mission">
-            <GraduationCap color="#68cfbd" size={24} />
-            <p>
-              A little drive.
-              <br />A world of possibility.
-            </p>
-            <Progress
-              value={Math.min(100, completed)}
-              className="h-1 bg-[#315363] [&_[data-slot=progress-indicator]]:bg-[#63cbba]"
-            />
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginTop: 10,
-              }}
-            >
-              <small>{completed} rides completed</small>
-              <small>100 goal</small>
-            </div>
-          </div>
           <div className="side-person">
             <Avatar name={name} />
             <div style={{ flex: 1 }}>
@@ -292,7 +277,7 @@ export function Shell({
             <SidebarTrigger className="mobile-menu" />
             <span>Workspace</span>
             <ChevronRight size={14} />
-            <strong style={{ fontWeight: 500, color: '#315469' }}>
+            <strong style={{ fontWeight: 500 }}>
               {sections.find((s) => s.id === page)?.label ??
                 (page === 'availability'
                   ? 'My availability'
@@ -315,7 +300,7 @@ export function Shell({
           {children}
           <footer className="screen-footer">
             <span>© 2026 Kinetic Youth · North Texas</span>
-            <span>Youth moving youth forward.</span>
+            <span>Times shown in Central Time</span>
           </footer>
         </div>
       </SidebarInset>

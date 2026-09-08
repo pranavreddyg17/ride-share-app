@@ -225,7 +225,7 @@ export function RideMap({
           .polyline(
             data.coordinates.map((v) => [v[1], v[0]] as Leaflet.LatLngTuple),
             {
-              color: full ? '#162f3b' : '#158e80',
+              color: full ? '#2b2b2b' : '#737373',
               weight: full ? 6 : 5,
               opacity: 0.9,
               lineCap: 'round',

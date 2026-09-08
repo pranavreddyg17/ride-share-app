@@ -14,6 +14,7 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Mapbox traffic-aware road directions and map tiles for the real pilot; OpenStreetMap/OSRM for practice. Missing or failed providers are shown explicitly, without fabricated routes or ETAs.
 - Consent-aware Twilio outbox with send claims, provider delivery reconciliation, expiry and visible failed/unknown states. Acceptance is distinguished from delivery. Ambiguous sends are not blindly retried.
 - Admin service status, missing-configuration checks, stale-ride counts, alert history, unresolved help (including older open alerts), and redacted operational JSON export.
+- Monochrome dispatch console, searchable ride ledger, driver service-credit reviews and role-scoped Excel workbooks with full amendment history. Suggested credit uses arrival at pickup through drop-off, including waiting; only admin-approved credit contributes to totals. See [service records](docs/SERVICE_RECORDS.md).
 
 ## Run locally
 
@@ -37,6 +38,8 @@ npm run build
 See [tests/README.md](tests/README.md) for isolated compiled-Worker integration tests, including database fault injection. Never point that harness at operational data.
 
 ## Trial setup
+
+The current admin and service-record redesign is local only. The user requested that it not be published.
 
 Follow [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md). Runtime credentials belong in hosting secrets, never source files or chat. Provider integrations are prepared; real SMS delivery, production map access, an unattended notification schedule, production recovery and physical-phone behavior still require setup and verification.
 

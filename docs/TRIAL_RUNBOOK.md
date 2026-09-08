@@ -4,6 +4,8 @@ This release implements a supervised, approved-participant web pilot. Local test
 
 ## 1. Hosting and release
 
+The latest admin/service-record redesign is local only, per the user's instruction not to publish. See [SERVICE_RECORDS.md](SERVICE_RECORDS.md) for credit policy, admin review and Excel export details. Publishing must remain a separate, explicitly requested step.
+
 Use the account/workspace that owns the existing Kinetic Youth Site. On September 8, 2026 the current Sites connection returned “project not found” and an empty site list; the hardened release could not be published through that connection. Preserve the existing project and database rather than creating a replacement.
 
 When access is restored, configure runtime values below, publish the validated build with both generated D1 migrations, and confirm success. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. The previous live version is not evidence that the local changes are deployed.
@@ -64,6 +66,8 @@ Rehearse with adults before student rides, using the actual iPhone/Android devic
 | Help | Coordinator sees the alert, older unresolved alerts remain visible, phone fallback works |
 | Texts | Consented devices receive messages; provider receipts match admin status |
 | Completion and rating | Code consumed, completion once, further tracking denied, rating once |
+| Service-credit review | Arrival-to-drop-off suggestion includes waiting; admin reason required; approved minutes visible to the driver |
+| Credit amendment/export | Old and new decisions remain in history; only the current approval contributes to totals; Excel matches filtered records |
 
 This web app cannot promise continuous background GPS. Desktop simulation does not test moving-device reliability. Define phone-based fallback and a process for a ride stranded in an active state if GPS fails; there is no unaudited completion bypass. If continuous background tracking is required, finish and test the native app path before student rides.
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { creditChecks } from './credit-checks.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 const base = process.env.KY_TEST_URL ?? 'http://127.0.0.1:3001';
@@ -51,6 +52,8 @@ async function req(user, path = '/api/state?mode=pilot', body, extra = {}) {
   const res = await fetch(base + path, {
     method: requestBody ? 'POST' : 'GET',
     headers: {
+      // Blocking Wrangler SQL checks can outlive pooled HTTP keep-alive sockets.
+      Connection: 'close',
       ...(user
         ? {
             'oai-authenticated-user-id': user.id,
@@ -849,6 +852,23 @@ await post(admin, {
   action: 'cancel',
   reason: 'Test cleanup',
 });
+const unassignedTestRide = (await read(admin)).rides.find(
+  (r) => [firstFuture, secondFuture].includes(r.id) && r.driverId !== driver.id,
+);
+const additionalCreditChecks = await creditChecks({
+  base,
+  req,
+  read,
+  post,
+  sql,
+  admin,
+  driverUser,
+  familyUser,
+  driver,
+  id,
+  forbiddenRide: unassignedTestRide.id,
+});
+checks += additionalCreditChecks;
 const strangerPractice = expect(
   await req(stranger, '/api/state?mode=practice'),
   200,
@@ -957,6 +977,8 @@ for (const page of [
   '/login',
   '/?mode=pilot',
   '/rides?mode=pilot',
+  '/hours?mode=pilot',
+  '/reports?mode=pilot',
   `/rides/${id}?mode=pilot`,
 ]) {
   const res = await fetch(base + page, {

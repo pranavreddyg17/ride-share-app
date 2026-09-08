@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Shell } from './shell';
 import { Pick } from './controls';
 import { Dashboard } from './dashboard';
+import { ServiceHours, Reports } from './service-hours';
 import { ConsumerHome } from './consumer';
 import { DriverRegister, FamilyRegister, Anchors } from './registers';
 import { Rides } from './rides';
@@ -151,9 +152,11 @@ export function PilotApp({
           'anchors',
           'safety',
           'settings',
+          'hours',
+          'reports',
         ]
       : realRole === 'driver'
-        ? ['overview', 'rides', 'availability', 'profile', 'safety']
+        ? ['overview', 'rides', 'availability', 'profile', 'safety', 'hours']
         : ['overview', 'rides', 'family', 'anchors', 'safety'];
   const visiblePage = validPages.includes(page) ? page : 'overview';
   const props = data ? { state: data, open: setModal, navigate } : null;
@@ -170,6 +173,12 @@ export function PilotApp({
       counts={{
         rides: data?.rides.filter((r) => r.status === 'pending').length ?? 0,
         drivers: data?.drivers.filter((d) => d.status === 'review').length ?? 0,
+        hours:
+          data?.rides.filter(
+            (r) =>
+              r.status === 'completed' &&
+              !data.credits.some((c) => c.rideId === r.id),
+          ).length ?? 0,
         safety:
           data?.events.filter((e) => e.kind === 'sos' && !e.resolved).length ??
           0,
@@ -236,8 +245,8 @@ export function PilotApp({
         <>
           <div className="page-heading">
             <div>
-              <h1>Your community is getting ready</h1>
-              <p>Loading your pilot workspace…</p>
+              <h1>Loading workspace</h1>
+              <p>Retrieving records…</p>
             </div>
           </div>
           <div className="stats">
@@ -272,6 +281,10 @@ export function PilotApp({
           {visiblePage === 'settings' && (
             <Settings {...props} commit={commit} />
           )}
+          {visiblePage === 'hours' && (
+            <ServiceHours {...props} commit={commit} />
+          )}
+          {visiblePage === 'reports' && <Reports {...props} />}
         </>
       )}
       {modal && data && (
