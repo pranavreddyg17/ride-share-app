@@ -18,6 +18,7 @@ export interface Driver {
   name: string;
   email: string;
   phone: string;
+  smsConsent?: boolean;
   school: string;
   dob: string;
   vehicle: string;
@@ -41,6 +42,7 @@ export interface Family {
   guardian: string;
   email: string;
   phone: string;
+  smsConsent?: boolean;
   student: string;
   school: string;
   consent: boolean;
@@ -78,6 +80,9 @@ export interface Ride {
   lat: number | null;
   lng: number | null;
   locationAt: string | null;
+  locationReceivedAt?: string | null;
+  pickupSnapshot?: Anchor;
+  dropoffSnapshot?: Anchor;
   accuracy: number | null;
   locationSource?: 'device' | 'simulation' | null;
   rating: number | null;
@@ -103,6 +108,7 @@ export interface Settings {
   coordinator: string;
   contactPhone: string;
   pilotName: string;
+  smsConsent?: boolean;
 }
 export interface State {
   demo: boolean;

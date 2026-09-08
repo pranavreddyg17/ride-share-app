@@ -1,10 +1,34 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 const base = process.env.KY_TEST_URL ?? 'http://127.0.0.1:3001';
 if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname))
   throw new Error(
     'Integration tests are restricted to an isolated localhost Worker.',
   );
 const run = Date.now().toString(36);
+const persist = '../api-hardening-state';
+function sql(command) {
+  const output = execFileSync(
+    process.execPath,
+    [
+      resolve('node_modules/wrangler/bin/wrangler.js'),
+      'd1',
+      'execute',
+      'DB',
+      '--local',
+      '--config',
+      'wrangler.local.json',
+      '--persist-to',
+      persist,
+      '--command',
+      command,
+      '--json',
+    ],
+    { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+  );
+  return JSON.parse(output).flatMap((r) => r.results ?? []);
+}
 let checks = 0;
 const admin = { id: 'ky-integration-admin', email: 'admin@ky-test.example' };
 const driverUser = {
@@ -20,8 +44,12 @@ const stranger = {
   email: `stranger-${run}@ky-test.example`,
 };
 async function req(user, path = '/api/state?mode=pilot', body, extra = {}) {
+  const requestBody =
+    body?.op === 'location' && !body.capturedAt
+      ? { ...body, capturedAt: new Date().toISOString() }
+      : body;
   const res = await fetch(base + path, {
-    method: body ? 'POST' : 'GET',
+    method: requestBody ? 'POST' : 'GET',
     headers: {
       ...(user
         ? {
@@ -29,10 +57,15 @@ async function req(user, path = '/api/state?mode=pilot', body, extra = {}) {
             'oai-authenticated-user-email': user.email,
           }
         : {}),
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(requestBody
+        ? {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          }
+        : {}),
       ...extra,
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: requestBody ? JSON.stringify(requestBody) : undefined,
   });
   const text = await res.text();
   let json;
@@ -58,8 +91,18 @@ const read = async (user) =>
 const post = async (user, body, status = 200, label = body.op) =>
   expect(await req(user, undefined, body), status, label);
 expect(await req(null), 401, 'anonymous request denied');
+expect(
+  await req(stranger),
+  403,
+  'first unregistered visitor cannot initialize admin access',
+);
 await read(admin);
 expect(await req(stranger), 403, 'unregistered live account denied');
+expect(
+  await req(admin, undefined, { op: 'settings' }, { 'Idempotency-Key': '' }),
+  400,
+  'mutations require an idempotency key',
+);
 expect(
   await req(
     admin,
@@ -203,6 +246,21 @@ await post(
   'family cannot grant admin access',
 );
 let fs = await read(familyUser);
+expect(
+  await req(familyUser, '/api/export?mode=pilot'),
+  403,
+  'family cannot export the pilot',
+);
+expect(
+  await req(driverUser, '/api/operations?mode=pilot'),
+  403,
+  'driver cannot view admin operations',
+);
+expect(
+  await req(admin, '/api/map-config?mode=pilot'),
+  503,
+  'unconfigured production map tiles fail explicitly',
+);
 assert.deepEqual(
   fs.families.map((f) => f.id),
   [family.id],
@@ -259,6 +317,28 @@ await post(
 );
 const r = await post(familyUser, { ...booking, scheduledAt: scheduled() });
 const id = r.id;
+const originalPickup = (await read(familyUser)).rides.find(
+  (r) => r.id === id,
+).pickupSnapshot;
+await post(admin, {
+  op: 'anchor.save',
+  id: a.id,
+  data: { ...anchor1, name: 'Updated pickup ' + run, lat: a.lat + 0.01 },
+});
+assert.deepEqual(
+  (await read(familyUser)).rides.find((r) => r.id === id).pickupSnapshot,
+  originalPickup,
+);
+checks++;
+console.log(
+  'PASS existing ride retains its agreed meeting point after anchor edits',
+);
+await post(admin, { op: 'anchor.save', id: a.id, data: anchor1 });
+expect(
+  await req(familyUser, `/api/route?mode=pilot&id=${id}`),
+  503,
+  'production route never falls back to an unconfigured public provider',
+);
 await post(
   familyUser,
   { ...booking, scheduledAt: scheduled() },
@@ -290,13 +370,74 @@ await post(
   'pickup cannot skip arrival',
 );
 await post(driverUser, { op: 'ride.action', id, action: 'accept' });
+await post(admin, {
+  op: 'driver.status',
+  id: driver.id,
+  status: 'suspended',
+  reason: 'Test temporary suspension',
+});
+await post(
+  driverUser,
+  { op: 'location', id, lat: a.lat, lng: a.lng, accuracy: 8 },
+  409,
+  'suspended driver cannot publish GPS',
+);
+await post(admin, {
+  op: 'driver.status',
+  id: driver.id,
+  status: 'approved',
+  reason: 'Test approval restored',
+});
+await post(driverUser, {
+  op: 'ride.action',
+  id,
+  action: 'decline',
+  reason: 'Test request return',
+});
+const declined = (await read(familyUser)).rides.find((r) => r.id === id);
+assert.equal(declined.status, 'pending');
+assert.equal(declined.driverId, null);
+checks++;
+console.log('PASS driver decline returns the request to coordinator matching');
+await post(
+  driverUser,
+  { op: 'location', id, lat: a.lat, lng: a.lng, accuracy: 8 },
+  403,
+  'unassigned driver loses GPS access immediately',
+);
+await post(admin, {
+  op: 'ride.action',
+  id,
+  action: 'assign',
+  driverId: driver.id,
+});
+await post(driverUser, { op: 'ride.action', id, action: 'accept' });
 await post(
   driverUser,
   { op: 'ride.action', id, action: 'complete' },
   409,
   'drop-off cannot skip pickup verification',
 );
-await post(driverUser, { op: 'ride.action', id, action: 'arrive' });
+await post(driverUser, {
+  op: 'location',
+  id,
+  lat: a.lat,
+  lng: a.lng,
+  accuracy: 8,
+  source: 'device',
+});
+const concurrentGps = await Promise.all([
+  req(driverUser, undefined, { op: 'ride.action', id, action: 'arrive' }),
+  req(driverUser, undefined, {
+    op: 'location',
+    id,
+    lat: a.lat,
+    lng: a.lng,
+    accuracy: 9,
+  }),
+]);
+for (const result of concurrentGps)
+  expect(result, 200, 'GPS update and arrival can commit concurrently');
 fs = await read(familyUser);
 const code = fs.rides.find((r) => r.id === id).otp;
 assert.match(code, /^\d{6}$/);
@@ -308,6 +449,56 @@ assert.equal(ds.rides.find((r) => r.id === id).otp, null);
 assert.equal(s.rides.find((r) => r.id === id).otp, null);
 checks++;
 console.log('PASS pickup code hidden from driver and coordinator');
+const exported = expect(
+  await req(admin, '/api/export?mode=pilot'),
+  200,
+  'admin can create redacted operational export',
+);
+assert.equal(
+  exported.records.find((record) => record.kind === 'rides' && record.id === id)
+    .data.otp,
+  null,
+);
+checks++;
+console.log('PASS operational export never includes a pickup code');
+const wrongBody = {
+  op: 'ride.action',
+  id,
+  action: 'verify',
+  otp: code === '000000' ? '111111' : '000000',
+};
+const wrongKey = crypto.randomUUID();
+expect(
+  await req(driverUser, undefined, wrongBody, { 'Idempotency-Key': wrongKey }),
+  400,
+  'wrong pickup attempt rejected',
+);
+expect(
+  await req(driverUser, undefined, wrongBody, { 'Idempotency-Key': wrongKey }),
+  400,
+  'retried wrong pickup attempt returns the original rejection',
+);
+assert.equal(
+  sql(
+    `SELECT json_extract(data,'$.otpAttempts') AS attempts FROM records WHERE workspace='pilot' AND kind='rides' AND id='${id}'`,
+  )[0].attempts,
+  1,
+);
+checks++;
+console.log('PASS retry does not consume a second pickup-code attempt');
+await post(admin, { op: 'ride.action', id, action: 'refresh-code' });
+// Expiry is changed only in the isolated test database, avoiding a fifteen-minute wait.
+sql(
+  `UPDATE records SET data=json_set(data,'$.otpExpiresAt','2000-01-01T00:00:00.000Z'),version=version+1 WHERE workspace='pilot' AND kind='rides' AND id='${id}'`,
+);
+await post(
+  driverUser,
+  { op: 'ride.action', id, action: 'verify', otp: code },
+  410,
+  'expired pickup code is rejected',
+);
+await post(admin, { op: 'ride.action', id, action: 'refresh-code' });
+const lockoutCode = (await read(familyUser)).rides.find((r) => r.id === id).otp;
 for (let i = 0; i < 5; i++)
   await post(
     driverUser,
@@ -315,7 +506,7 @@ for (let i = 0; i < 5; i++)
       op: 'ride.action',
       id,
       action: 'verify',
-      otp: code === '000000' ? '111111' : '000000',
+      otp: lockoutCode === '000000' ? '111111' : '000000',
     },
     400,
     `incorrect pickup code attempt ${i + 1}`,
@@ -345,7 +536,7 @@ await post(
   driverUser,
   { op: 'ride.action', id, action: 'complete' },
   409,
-  'drop-off without GPS denied',
+  'pickup GPS cannot confirm destination drop-off',
 );
 await post(
   familyUser,
@@ -394,6 +585,35 @@ console.log(
 );
 await post(
   driverUser,
+  {
+    op: 'location',
+    id,
+    lat: b.lat,
+    lng: b.lng,
+    accuracy: 8,
+    capturedAt: new Date(
+      Date.parse(fs.rides.find((r) => r.id === id).locationAt) - 1,
+    ).toISOString(),
+  },
+  409,
+  'out-of-order GPS cannot move the driver backwards',
+);
+await post(
+  driverUser,
+  {
+    op: 'location',
+    id,
+    lat: a.lat,
+    lng: a.lng,
+    accuracy: 8,
+    source: 'device',
+    capturedAt: new Date(Date.now() - 31000).toISOString(),
+  },
+  400,
+  'stale device GPS is rejected',
+);
+await post(
+  driverUser,
   { op: 'ride.action', id, action: 'complete' },
   409,
   'drop-off far from destination denied',
@@ -429,6 +649,19 @@ const event = s.events.find((e) => e.rideId === id && e.kind === 'sos');
 assert.ok(event);
 checks++;
 console.log('PASS help request delivered to coordinator');
+sql(`INSERT INTO events(workspace,id,ride_id,kind,message,created_at) VALUES('pilot','old-help-${run}','${id}','sos','Unresolved older test help','2000-01-01T00:00:00.000Z');
+WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<105)
+INSERT INTO events(workspace,id,kind,message,created_at) SELECT 'pilot','filler-${run}-'||x,'info','Test activity','2020-01-01T00:00:00.000Z' FROM n;`);
+assert.ok((await read(admin)).events.some((e) => e.id === `old-help-${run}`));
+checks++;
+console.log(
+  'PASS unresolved help stays visible after falling outside recent activity',
+);
+await post(admin, {
+  op: 'event.resolve',
+  id: `old-help-${run}`,
+  note: 'Old test alert resolved',
+});
 await post(
   familyUser,
   { op: 'event.resolve', id: event.id, note: 'Unauthorized' },
@@ -531,6 +764,79 @@ checks++;
 console.log(
   'PASS simultaneous driver assignments allow exactly one overlapping booking',
 );
+const replayBooking = {
+  ...booking,
+  scheduledAt: new Date(Date.now() + 5 * 3600000).toISOString(),
+};
+const replayKey = crypto.randomUUID();
+const replayed = await Promise.all([
+  req(familyUser, undefined, replayBooking, { 'Idempotency-Key': replayKey }),
+  req(familyUser, undefined, replayBooking, { 'Idempotency-Key': replayKey }),
+]);
+assert.equal(replayed[0].status, 200);
+assert.equal(replayed[1].status, 200);
+assert.equal(replayed[0].data.id, replayed[1].data.id);
+checks++;
+console.log(
+  'PASS retried booking returns the original result without a duplicate ride',
+);
+expect(
+  await req(
+    familyUser,
+    undefined,
+    { ...replayBooking, activity: 'different' },
+    { 'Idempotency-Key': replayKey },
+  ),
+  409,
+  'one request key cannot be reused for a different booking',
+);
+const counts = () =>
+  sql(
+    "SELECT (SELECT COUNT(*) FROM records WHERE kind='rides') AS rides,(SELECT COUNT(*) FROM events) AS events,(SELECT COUNT(*) FROM notification_outbox) AS alerts,(SELECT COUNT(*) FROM mutation_receipts) AS receipts",
+  )[0];
+const beforeFault = counts();
+sql(
+  "CREATE TRIGGER ky_test_outbox_failure BEFORE INSERT ON notification_outbox WHEN NEW.workspace='pilot' BEGIN SELECT RAISE(ABORT,'injected outbox failure'); END",
+);
+const faultBody = {
+  ...booking,
+  activity: 'Fault injection',
+  scheduledAt: new Date(Date.now() + 6 * 3600000).toISOString(),
+};
+const faultKey = crypto.randomUUID();
+try {
+  expect(
+    await req(familyUser, undefined, faultBody, {
+      'Idempotency-Key': faultKey,
+    }),
+    500,
+    'database fault rejects the whole transaction',
+  );
+  assert.deepEqual(counts(), beforeFault);
+  checks++;
+  console.log(
+    'PASS injected notification failure rolls back ride, audit, alert and receipt together',
+  );
+} finally {
+  sql('DROP TRIGGER IF EXISTS ky_test_outbox_failure');
+}
+const recovered = expect(
+  await req(familyUser, undefined, faultBody, { 'Idempotency-Key': faultKey }),
+  200,
+  'same request recovers after a rolled-back failure',
+);
+await post(admin, {
+  op: 'ride.action',
+  id: recovered.id,
+  action: 'cancel',
+  reason: 'Test cleanup',
+});
+await post(admin, {
+  op: 'ride.action',
+  id: replayed[0].data.id,
+  action: 'cancel',
+  reason: 'Test cleanup',
+});
 await post(admin, {
   op: 'ride.action',
   id: firstFuture,
@@ -555,6 +861,24 @@ expect(
   await req(stranger, `/api/route?mode=pilot&id=${id}`),
   403,
   'unregistered account cannot read route',
+);
+const operations = expect(
+  await req(admin, '/api/operations?mode=pilot'),
+  200,
+  'admin can read operational readiness',
+);
+assert.equal(
+  operations.checks.find((check) => check.name === 'SMS provider').ok,
+  false,
+);
+checks++;
+console.log(
+  'PASS readiness reports an unconfigured SMS provider as unavailable',
+);
+expect(
+  await req(stranger, '/api/jobs/notifications', {}, {}),
+  401,
+  'notification processor is protected',
 );
 const driverPractice = expect(
   await req(stranger, '/api/state?mode=practice', undefined, {
@@ -596,21 +920,27 @@ assert.equal(simulated.lat, 33.04);
 assert.equal(simulated.locationSource, 'simulation');
 checks++;
 console.log('PASS simulation reaches family and remains explicitly labeled');
-expect(
-  await req(stranger, `/api/route?mode=practice&pickup=marcus&dropoff=cac`),
-  200,
-  'prebooking road preview',
-);
-expect(
-  await req(
-    stranger,
-    `/api/route?mode=practice&id=${practiceRide.id}&leg=current`,
-    undefined,
-    { 'x-ky-role': 'family' },
-  ),
-  200,
-  'fresh driver location produces road ETA',
-);
+// External availability is a separate optional smoke check; provider contracts are deterministically unit-tested.
+if (process.env.KY_TEST_EXTERNAL_ROUTES === '1') {
+  expect(
+    await req(stranger, '/api/route?mode=practice&pickup=marcus&dropoff=cac'),
+    200,
+    'external prebooking road preview',
+  );
+  expect(
+    await req(
+      stranger,
+      `/api/route?mode=practice&id=${practiceRide.id}&leg=current`,
+      undefined,
+      { 'x-ky-role': 'family' },
+    ),
+    200,
+    'external road ETA',
+  );
+} else
+  console.log(
+    'NOT RUN external routing availability (set KY_TEST_EXTERNAL_ROUTES=1)',
+  );
 await post(
   admin,
   { op: 'member.remove', email: admin.email, reason: 'Self revoke' },

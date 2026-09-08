@@ -1,26 +1,23 @@
-# Kinetic Youth pilot
+# Kinetic Youth
 
-A mobile-friendly web application for a coordinator-led, invitation-only youth transportation pilot. The app includes admin, driver, and family portals backed by a Cloudflare D1 database. It is an implemented pilot foundation, not a native iOS/Android app or a public rideshare service.
+A mobile-friendly application for a coordinator-led, approved-participant transportation pilot. React/Vinext screens call authenticated Worker APIs backed by Cloudflare D1. This is a small supervised pilot implementation, not an Uber-scale service or a native mobile app.
 
-## What works
+## Implemented
 
-- Secure ChatGPT sign-in; verified-email membership for the real pilot. Admins create and revoke linked driver, family, and coordinator accounts.
-- Separate, persisted practice workspaces with fictional records and a role selector. Practice identity switching cannot change real pilot privileges.
-- Driver register with vehicle, contact, license/insurance expiry dates, review checklists, approval/suspension, and CSV export.
-- Family/student register with guardian consent and emergency contact; family-owned ride views.
-- Confirmed anchor location register with coordinates and meeting instructions.
-- Ride requests 30 minutes to 7 days ahead; coordinator assignment, driver acceptance, arrival, pickup code, completion, and reasoned cancellation.
-- Driver and student booking conflicts checked atomically at write time using a 45-minute separation. One active pickup/trip per driver/student. Recurring driver availability reserves 30 minutes for each ride.
-- Six-digit, cryptographically generated pickup codes; 15-minute expiry, five attempts, one-time consumption, and coordinator-only reissue. Codes are visible only to the assigned family.
-- Map-first family/driver screens with step-by-step booking review, driver and vehicle details, pickup verification, and a current road ETA when recent GPS is available.
-- Interactive Leaflet / OpenStreetMap maps and road geometry / duration from OSRM. Failed routing is shown explicitly, without a fabricated road route.
-- Foreground device GPS sharing and five-second viewer polling. Stale positions are marked; real drop-off requires a fix less than 60 seconds old, accuracy at most 100 m, and distance at most 500 m from the destination.
-- Ride history, one rating per completed trip, in-app coordinator help requests, resolution notes, and activity history.
-- Responsive layouts, keyboard-accessible controls, dialogs, form validation, offline feedback, loading states, and empty states.
+- Admin, driver and family membership bound to verified ChatGPT identities. Only the explicitly configured owner can initialize admin access. Practice personas use a separate per-user workspace.
+- Driver/family registers, screening attestations, approval/suspension, guardian consent, emergency contacts, confirmed meeting points, account grants/revocation and CSV exports.
+- Ride requests, manual assignment, acceptance, decline back to matching, arrival, pickup verification, completion, cancellation, help requests and ratings.
+- Six-digit pickup codes visible only to the assigned family, expiring after 15 minutes, locked after five incorrect attempts, consumed once, and reissued only by a coordinator.
+- Atomic ride, activity, notification and idempotency-receipt writes. Concurrent booking/assignment conflicts are rejected. Network retries reuse one key and cannot create duplicate rides. API rate limits bound request volume.
+- Separate storage for the latest GPS fix so tracking does not overwrite ride transitions. Only the assigned, currently approved driver can publish device positions. Stale, out-of-order, invalid and simulated real-pilot positions are rejected. Viewers poll every five seconds and mark GPS stale after 45 seconds.
+- Pickup and drop-off require device GPS less than 60 seconds old, reported accuracy at most 100 m, within 200 m of the agreed location. Ride snapshots preserve meeting points after anchor edits.
+- Mapbox traffic-aware road directions and map tiles for the real pilot; OpenStreetMap/OSRM for practice. Missing or failed providers are shown explicitly, without fabricated routes or ETAs.
+- Consent-aware Twilio outbox with send claims, provider delivery reconciliation, expiry and visible failed/unknown states. Acceptance is distinguished from delivery. Ambiguous sends are not blindly retried.
+- Admin service status, missing-configuration checks, stale-ride counts, alert history, unresolved help (including older open alerts), and redacted operational JSON export.
 
-## Start locally
+## Run locally
 
-Use Node 22.13 or newer and npm. The checked-in lockfile defines dependency versions.
+Use Node 22.13+ and the existing npm lockfile.
 
 ```sh
 npm ci
@@ -28,55 +25,37 @@ npm run db:local
 npm run dev
 ```
 
-Open the Local URL printed by the development server. Select the practice workspace and complete local sign-in. The Sites development plugin provides a localhost-only test identity; it strips externally supplied identity headers.
+Open the Local URL and select **Practice workspace**. Local sign-in comes from the Sites development plugin, which strips forged identity headers. Real admin initialization requires `KY_BOOTSTRAP_ADMIN_EMAIL` in the runtime environment. There is no first-visitor or localhost admin bypass.
 
 ```sh
 npm run typecheck
 npm run lint
+npm run test:unit
 npm run build
 ```
 
-The Worker build is in `dist/server`; browser assets are in `dist/client`. The app uses the Sites-generated Vinext architecture and an append-only Drizzle migration chain in `drizzle/`. Apply migrations before starting an independent Worker deployment.
+See [tests/README.md](tests/README.md) for isolated compiled-Worker integration tests, including database fault injection. Never point that harness at operational data.
 
-## Try a ride
+## Trial setup
 
-1. Select Admin in the practice role selector. Register or review drivers/families, or use the fictional records.
-2. Complete Aiden's preloaded active trip from Driver view.
-3. Request a future ride for Emma Wilson in Family view. In Admin view, assign Aiden.
-4. In Driver view, confirm the ride and mark arrival.
-5. In Family view, open that ride and read the pickup code. In Driver view, enter it to start, then confirm drop-off.
-6. In Family view, rate the completed trip. Review activity as Admin.
+Follow [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md). Runtime credentials belong in hosting secrets, never source files or chat. Provider integrations are prepared; real SMS delivery, production map access, an unattended notification schedule, production recovery and physical-phone behavior still require setup and verification.
 
-Practice mode bypasses the drop-off proximity check and the 30-minute check-in window so you can rehearse at a desk. It still enforces pickup-code and state-transition rules. Sample locations are explicitly labeled. In Driver view, use “Play a 75-second test drive” to send simulated road positions through the same persisted tracking path. Open Family view in another tab to observe the updates. The simulation is explicitly rejected in the real pilot.
+The existing Site is identified in `.openai/hosting.json`. Its hosting audience and this app's membership register are separate gates. Reuse that Site when publishing. Never expose a raw Worker without an authentication gateway that strips client-supplied `oai-authenticated-user-*` headers and supplies verified identity.
 
-## Real pilot setup
+## Architecture and limits
 
-The private site's first authenticated visitor who opens `/?mode=pilot` becomes the initial coordinator. Initialize this while the Site is owner-only, before changing its audience. Later visitors must have their verified sign-in email added by a coordinator. Hosting access policy and the app membership register are separate gates; adding a member does not make an owner-only Site visible to that person.
+`lib/server.ts` owns authorization and ride rules. `lib/reliability.ts` commits guarded primary writes, receipts and follow-up statements in D1 transactions. `ride_locations` contains only the newest fix. `lib/providers.ts` supplies road routes and public map configuration. `lib/notifications.ts` consumes the outbox using `lib/sms-provider.ts`; `/api/jobs/notifications` is the protected job entry point. `/api/operations` and `/api/export` require an admin.
 
-The real workspace starts empty. Add the coordinator phone, confirmed anchors, drivers, families, and account mappings. Original license, insurance, screening, and signed consent documents must be reviewed and stored using your organization's separate secure process. This app stores review attestations, not documents, and performs no automated identity or eligibility verification. Guardian accounts manage one student per family record in this initial version. Driver/family profile email fields do not change the separate sign-in access register.
+Prepared SQL, record versions, current membership checks and database guards enforce mutations. Driver/student trips require a 45-minute scheduling separation; accepted trips reserve 30 minutes in driver availability. This conservative fixed window is not a traffic-aware dispatch optimizer.
 
-The real pilot is not ready for transporting students until the operator has completed actual-device testing and confirmed driver eligibility (including age, passenger restrictions and licensing), coverage, guardian consent, operational supervision and emergency response. Review these with the appropriate qualified professionals and institutions; software approval is not legal or insurance approval.
+The notification processor removes expired request counters, mutation receipts older than 24 hours, outbox entries older than 30 days, and latest GPS for terminal rides after 24 hours. Participant records and activity are retained until the operator applies an approved retention process. The operational export omits pickup codes and is **not** a restorable database backup.
 
-## Integrations and limitations
+Browser GPS requires HTTPS, permission, active connectivity and foreground execution. Locking or backgrounding a phone may stop updates. There is no native background tracking, push notification service, automated matching, in-app turn-by-turn navigation, payments or SMS sign-in. In-app pickup codes and verified-account login work independently of SMS.
 
-- Authentication uses Sites' trusted, dispatch-owned ChatGPT identity headers. It does **not** implement Firebase or SMS OTP login. Never expose the raw Worker directly without a trusted authentication gateway that strips forged `oai-authenticated-user-*` headers. The local Worker test harness supplies those headers only on localhost.
-- No SMS, push, email delivery, payments, native apps, background GPS, automated matching, public driver discovery, or turn-by-turn navigation inside the app. Opening external navigation is supported.
-- Pickup codes and ride/help updates are delivered inside the app. An in-app help request does not contact emergency services, and delivery to a person is not guaranteed. Use phone contact for urgent issues.
-- Coordinates are manually registered for approved anchors. Free-form home-address geocoding is intentionally outside this supervised pilot.
-- [Leaflet](https://leafletjs.com/reference.html), [OpenStreetMap tiles](https://operations.osmfoundation.org/policies/tiles/), and the [OSRM route API](https://project-osrm.org/docs/v5.24.0/api/) support the prototype maps. Public routing/tiles have no contracted availability guarantee here; select a production service before operational use. Route durations are estimates without traffic.
-- GPS requires HTTPS (or localhost), browser permission, foreground execution, and an active connection. Locking the phone or backgrounding the page can stop updates. Coordinate readings and in-app drop-off confirmation do not prove student handoff.
-- Records are tenant-scoped JSON documents in D1, accessed through prepared statements and version-checked writes; this small-pilot design does not implement the source document's PostGIS matching service. Only the latest GPS fix is stored, not a breadcrumb replay.
-- There is no automated data-retention or backup workflow. Define and configure retention, exports, incident procedures, and backups before collecting production student data. The activity view displays the most recent 100 events.
-- Four remaining npm audit findings are moderate, transitive development-tool findings under Drizzle Kit's legacy esbuild loader; they are not included in the deployed Worker. Do not expose local development tooling to an untrusted network. Runtime dependency audit is clean as of the included build.
+Registers record operator attestations; they do not verify licenses, insurance, screening documents or student handoff. Original documents need a separate secure review/storage process. One family record currently represents one student. A coordinator must be reachable during every ride; an in-app help request does not contact emergency services.
 
-## Source document scope
+Full workspace records are read and filtered for a small pilot. A larger launch needs paginated/query-scoped storage, measured capacity, stronger monitoring, independent security review and a native tracking strategy before claiming parity with a major rideshare platform.
 
-`KineticYouth_Requirements.docx` and the supplied posters informed the brand and workflow. The document's proposed React Native/FastAPI/PostGIS/Firebase stack and four-week build sequence were reference material, not instructions to execute. This version prioritizes the user's request for a working basic trial: a single responsive web app with durable records and supervised operations. Native mobile apps, automated notifications, uploaded document verification and the larger-scale architecture remain future work.
+## Source requirements
 
-## Security and verification
-
-Authorization lives in `lib/server.ts`. Client-selected practice roles are honored only inside that authenticated user's practice namespace. Real membership comes from the verified email register. APIs reject missing identities and cross-origin JSON writes. Entity access is checked on every ride mutation and route lookup; public output omits pickup codes from driver/admin views and unnecessary family/profile fields from other roles. CSV cells that could be interpreted as spreadsheet formulas are escaped.
-
-`tests/api.integration.mjs` exercises the compiled Worker against an isolated local database. The test runner refuses non-loopback targets. See `tests/README.md` for setup. Physical-device GPS behavior, SMS delivery, institutional arrangements and browser visual QA are not verified by this suite.
-
-The lint configuration checks application code strictly. React Compiler eligibility checks are disabled because this app does not enable React Compiler. Generated shadcn wrappers have narrow overrides for rules that cannot infer forwarded children/labels and the library's accessible compound-control patterns.
+The supplied document and posters informed the brand and workflows. Their proposed React Native/FastAPI/PostGIS/Firebase stack was reference material, not an instruction to replace the existing application. This implementation follows the user's mobile-friendly web-first, admin-approved trial.

@@ -1,4 +1,7 @@
-import { ApiError, context, state, mutate } from '@/lib/server';
+import { ApiError, context, state } from '@/lib/server';
+import { executeMutation, rateLimit } from '@/lib/reliability';
+import { processNotifications } from '@/lib/notifications';
+import { waitUntil } from 'cloudflare:workers';
 export const dynamic = 'force-dynamic';
 function response(value: unknown, status = 200) {
   return Response.json(value, {
@@ -12,7 +15,9 @@ function response(value: unknown, status = 200) {
 }
 export async function GET(req: Request) {
   try {
-    return response(await state(await context(req)));
+    const c = await context(req);
+    await rateLimit(c, 'read', 120);
+    return response(await state(c));
   } catch (e) {
     return failure(e);
   }
@@ -36,7 +41,19 @@ export async function POST(req: Request) {
     }
     if (!body || typeof body !== 'object' || Array.isArray(body))
       throw new ApiError(400, 'Invalid request.');
-    return response(await mutate(await context(req), body));
+    const c = await context(req);
+    const result = await executeMutation(
+      c,
+      body,
+      req.headers.get('Idempotency-Key') ?? '',
+    );
+    if (!c.demo && body.op !== 'location')
+      waitUntil(
+        processNotifications().catch(() =>
+          console.error('Notification processing interrupted'),
+        ),
+      );
+    return response(result.body, result.status);
   } catch (e) {
     return failure(e);
   }

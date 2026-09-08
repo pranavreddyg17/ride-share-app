@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { postMutation } from '@/lib/client-api';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, AlertCircle, X, ArrowRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +25,7 @@ export function PilotApp({
     [selected, setSelected] = useState(initialRide),
     [modal, setModal] = useState<Modal | null>(null),
     [role, setRole] = useState<Role>('family'),
-    [demo, setDemo] = useState(true),
+    [demo, setDemo] = useState(false),
     [ready, setReady] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState(''),
@@ -33,7 +34,7 @@ export function PilotApp({
   useEffect(() => {
     const read = () => {
       const p = new URLSearchParams(location.search);
-      setDemo(p.get('mode') !== 'pilot');
+      setDemo(p.get('mode') === 'practice');
       const r = p.get('viewAs');
       setRole(r === 'driver' ? 'driver' : r === 'admin' ? 'admin' : 'family');
       const parts = location.pathname.split('/').filter(Boolean);
@@ -48,6 +49,7 @@ export function PilotApp({
       on = () => setOffline(false);
     window.addEventListener('offline', off);
     window.addEventListener('online', on);
+    setOffline(!navigator.onLine);
     return () => {
       window.removeEventListener('popstate', read);
       window.removeEventListener('offline', off);
@@ -79,7 +81,15 @@ export function PilotApp({
       if (document.visibilityState === 'visible')
         fetchState().catch((e) => setError(e.message));
     }, 5000);
+    const resume = () => {
+      if (document.visibilityState === 'visible')
+        fetchState().catch((e) => setError(e.message));
+    };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
     return () => {
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', resume);
       clearInterval(interval);
       // This counter invalidates asynchronous requests; it is not a DOM ref.
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +102,10 @@ export function PilotApp({
     setModal(null);
     const query = new URLSearchParams();
     if (!demo) query.set('mode', 'pilot');
-    else query.set('viewAs', role);
+    else {
+      query.set('mode', 'practice');
+      query.set('viewAs', role);
+    }
     const path =
       (p === 'overview'
         ? '/'
@@ -107,24 +120,19 @@ export function PilotApp({
     setPage('overview');
     setSelected(undefined);
     setModal(null);
-    history.pushState({}, '', `/?viewAs=${v}`);
+    history.pushState({}, '', `/?mode=practice&viewAs=${v}`);
   };
   async function commit(body: Record<string, unknown>) {
     if (!navigator.onLine)
       throw new Error('You are offline. Reconnect before saving changes.');
-    const res = await fetch(`/api/state?mode=${demo ? 'practice' : 'pilot'}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-ky-role': role },
-      body: JSON.stringify(body),
-    });
-    const result = (await res.json()) as {
-      message: string;
-      id?: string;
-      error?: string;
-    };
-    if (!res.ok) throw new Error(result.error ?? 'Could not save the change.');
+    const result = await postMutation(demo, role, body);
     setMessage(result.message);
-    await fetchState();
+    // A successful write must stay successful if the follow-up read loses connectivity.
+    await fetchState().catch(() =>
+      setError(
+        'Saved successfully. Reconnecting to refresh the latest records.',
+      ),
+    );
     return result;
   }
   useEffect(() => {

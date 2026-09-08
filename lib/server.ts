@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { sampleData } from './seed';
+import { notificationStatements } from './notifications';
 import {
   DEFAULT_SLOTS,
   type Role,
@@ -29,7 +30,9 @@ export const db = () => {
 };
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
-type Context = {
+export type Context = {
+  writes: D1PreparedStatement[];
+  after: D1PreparedStatement[];
   workspace: string;
   demo: boolean;
   role: Role;
@@ -40,7 +43,7 @@ type Context = {
 export async function context(req: Request): Promise<Context> {
   const user = await getChatGPTUser();
   if (!user) throw new ApiError(401, 'Sign in to access your pilot workspace.');
-  const demo = new URL(req.url).searchParams.get('mode') !== 'pilot';
+  const demo = new URL(req.url).searchParams.get('mode') === 'practice';
   if (demo) {
     const workspace = 'practice:' + user.userId;
     await initialize(workspace, true);
@@ -54,6 +57,8 @@ export async function context(req: Request): Promise<Context> {
     return {
       workspace,
       demo,
+      writes: [],
+      after: [],
       role,
       recordId: role === 'driver' ? 'd1' : role === 'family' ? 'f1' : null,
       name:
@@ -66,14 +71,16 @@ export async function context(req: Request): Promise<Context> {
     };
   }
   await initialize('pilot', false);
-  // A private Site's first authenticated owner bootstraps the coordinator.
-  // Later accounts must be registered by a coordinator and match their verified email.
-  await db()
-    .prepare(
-      "INSERT OR IGNORE INTO members (email,user_id,role,record_id,name) SELECT ?,?,'admin',NULL,? WHERE NOT EXISTS (SELECT 1 FROM members)",
-    )
-    .bind(user.email.toLowerCase(), user.userId, user.fullName ?? user.email)
-    .run();
+  // Only the configured owner may initialize access, regardless of site audience.
+  const owner = env.KY_BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  if (owner && user.email.toLowerCase() === owner) {
+    await db()
+      .prepare(
+        "INSERT OR IGNORE INTO members (email,user_id,role,record_id,name) SELECT ?,?,'admin',NULL,? WHERE NOT EXISTS (SELECT 1 FROM members)",
+      )
+      .bind(owner, user.userId, user.fullName ?? user.email)
+      .run();
+  }
   const member = await db()
     .prepare(
       'SELECT email,user_id,role,record_id,name FROM members WHERE email=?',
@@ -93,12 +100,17 @@ export async function context(req: Request): Promise<Context> {
     );
   if (member.user_id && member.user_id !== user.userId)
     throw new ApiError(403, 'This account needs coordinator review.');
-  await db()
-    .prepare('UPDATE members SET user_id=? WHERE email=? AND user_id IS NULL')
-    .bind(user.userId, member.email)
-    .run();
+  const bound = await db()
+    .prepare(
+      'UPDATE members SET user_id=? WHERE email=? AND (user_id IS NULL OR user_id=?) RETURNING user_id',
+    )
+    .bind(user.userId, member.email, user.userId)
+    .first();
+  if (!bound) throw new ApiError(403, 'This account needs coordinator review.');
   return {
     workspace: 'pilot',
+    writes: [],
+    after: [],
     demo: false,
     role: member.role,
     recordId: member.record_id,
@@ -160,7 +172,9 @@ export async function record<T>(c: Context, kind: string, id: string) {
     .bind(c.workspace, kind, id)
     .first<{ data: string; version: number }>();
   if (!row) throw new ApiError(404, 'This record could not be found.');
-  return { data: JSON.parse(row.data) as T, version: row.version };
+  let data = JSON.parse(row.data) as T;
+  if (kind === 'rides') data = (await withLocation(c, data as Ride)) as T;
+  return { data, version: row.version };
 }
 export function requireRole(c: Context, ...roles: Role[]) {
   if (!roles.includes(c.role))
@@ -213,15 +227,15 @@ function number(v: unknown, min: number, max: number) {
     throw new ApiError(400, 'Enter a number within the allowed range.');
   return v;
 }
-function driverReady(d: Driver) {
+function driverReady(d: Driver, at = now()) {
   if (
     d.status !== 'approved' ||
     !d.licenseChecked ||
     !d.insuranceChecked ||
     !d.guardianConsent ||
     !d.screeningChecked ||
-    d.licenseExpiry < now().slice(0, 10) ||
-    d.insuranceExpiry < now().slice(0, 10)
+    d.licenseExpiry < at.slice(0, 10) ||
+    d.insuranceExpiry < at.slice(0, 10)
   )
     throw new ApiError(
       409,
@@ -260,12 +274,14 @@ async function audit(
   kind = 'info',
   rideId: string | null = null,
 ) {
-  await db()
+  const statement = db()
     .prepare(
       'INSERT INTO events (workspace,id,ride_id,kind,message,created_at) VALUES (?,?,?,?,?,?)',
     )
-    .bind(c.workspace, uid(), rideId, kind, message, now())
-    .run();
+    .bind(c.workspace, uid(), rideId, kind, message, now());
+  (c.writes.length ? c.after : c.writes).push(statement);
+  if (rideId && !c.demo)
+    c.after.push(...notificationStatements(c.workspace, rideId, kind));
 }
 async function save(
   c: Context,
@@ -276,6 +292,17 @@ async function save(
   guard = '',
   guardValues: unknown[] = [],
 ) {
+  if (kind === 'rides' && !c.demo) {
+    data = {
+      ...(data as Ride),
+      lat: null,
+      lng: null,
+      accuracy: null,
+      locationAt: null,
+      locationReceivedAt: null,
+      locationSource: null,
+    };
+  }
   let statement;
   if (version === null) {
     statement = db()
@@ -299,12 +326,7 @@ async function save(
         ...guardValues,
       );
   }
-  const r = await statement.run();
-  if (r.meta.changes !== 1)
-    throw new ApiError(
-      409,
-      'This record changed, consent is missing, or the driver/student has a conflicting ride. Refresh and choose a time at least 45 minutes from other rides.',
-    );
+  c.writes.push(statement);
 }
 async function saveRide(c: Context, r: Ride, version: number | null) {
   const guards: string[] = [];
@@ -324,6 +346,7 @@ async function saveRide(c: Context, r: Ride, version: number | null) {
         'drivers',
         r.driverId,
       );
+      driverReady(d, r.scheduledAt);
       driverReady(d);
       if (['pending', 'accepted'].includes(r.status))
         inAvailability(d, r.scheduledAt);
@@ -343,7 +366,29 @@ async function saveRide(c: Context, r: Ride, version: number | null) {
       }
     }
   }
-  await save(c, 'rides', r.id, r, version, guards.join(' AND '), args);
+  await save(
+    c,
+    'rides',
+    r.id,
+    c.demo
+      ? r
+      : {
+          ...r,
+          lat: null,
+          lng: null,
+          accuracy: null,
+          locationAt: null,
+          locationSource: null,
+        },
+    version,
+    guards.join(' AND '),
+    args,
+  );
+  c.after.push(
+    db()
+      .prepare('UPDATE workspaces SET revision=revision+1 WHERE id=?')
+      .bind(c.workspace),
+  );
 }
 export async function state(c: Context): Promise<State> {
   const [drivers, families, rides, anchors, eventResult, ws, memberResult] =
@@ -354,9 +399,9 @@ export async function state(c: Context): Promise<State> {
       list<Anchor>(c, 'anchors'),
       db()
         .prepare(
-          'SELECT id,ride_id,kind,message,created_at,resolved,note FROM events WHERE workspace=? ORDER BY created_at DESC LIMIT 100',
+          "SELECT id,ride_id,kind,message,created_at,resolved,note FROM events WHERE workspace=? AND (id IN (SELECT id FROM events WHERE workspace=? ORDER BY created_at DESC LIMIT 100) OR (kind='sos' AND resolved=0)) ORDER BY created_at DESC",
         )
-        .bind(c.workspace)
+        .bind(c.workspace, c.workspace)
         .all<{
           id: string;
           ride_id: string | null;
@@ -379,7 +424,19 @@ export async function state(c: Context): Promise<State> {
           }>()
         : Promise.resolve({ results: [] }),
     ]);
-  const visibleRides = rides.filter((r) => canSeeRide(c, r));
+  const locations = await db()
+    .prepare('SELECT * FROM ride_locations WHERE workspace=?')
+    .bind(c.workspace)
+    .all<LocationRow>();
+  const visibleRides = rides
+    .filter((r) => canSeeRide(c, r))
+    .map((r) =>
+      mergeLocation(
+        c,
+        r,
+        locations.results.find((l) => l.ride_id === r.id),
+      ),
+    );
   const driverIds = new Set(visibleRides.map((r) => r.driverId));
   const familyIds = new Set(visibleRides.map((r) => r.familyId));
   const visibleDrivers = drivers
@@ -500,6 +557,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       name: txt(input.name, 2, 100),
       email: email(input.email),
       phone: phone(input.phone),
+      smsConsent: bool(input.smsConsent),
       school: txt(input.school, 2, 100),
       dob,
       vehicle: txt(input.vehicle, 4, 100),
@@ -610,6 +668,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       student: txt(input.student, 2, 100),
       email: email(input.email),
       phone: phone(input.phone),
+      smsConsent: bool(input.smsConsent),
       school: txt(input.school, 2, 100),
       consent: bool(input.consent),
       emergency: phone(input.emergency),
@@ -673,11 +732,17 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       c.recordId!,
     );
     driverReady(d);
+    const workspaceVersion = await db()
+      .prepare('SELECT revision FROM workspaces WHERE id=?')
+      .bind(c.workspace)
+      .first<{ revision: number }>();
     const slots = body.slots;
     if (!Array.isArray(slots) || slots.length !== 7)
       throw new ApiError(400, 'Set all seven days.');
     d.availability = slots.map((s, i) => {
       if (
+        !s ||
+        typeof s !== 'object' ||
         s.day !== i ||
         typeof s.enabled !== 'boolean' ||
         !/^([01]\d|2[0-3]):[0-5]\d$/.test(s.start) ||
@@ -696,7 +761,16 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         !['completed', 'cancelled', 'in_progress', 'arrived'].includes(r.status)
       )
         inAvailability(d, r.scheduledAt);
-    await save(c, 'drivers', d.id, d, version);
+    await save(
+      c,
+      'drivers',
+      d.id,
+      d,
+      version,
+      'EXISTS (SELECT 1 FROM workspaces WHERE id=? AND revision=?)',
+      [c.workspace, workspaceVersion!.revision],
+    );
+    await audit(c, `${c.name} updated driver availability.`, 'driver');
     return { message: 'Your weekly availability is saved.' };
   }
   if (op === 'ride.create') {
@@ -709,8 +783,18 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       dropoffId = txt(body.dropoffId);
     if (pickupId === dropoffId)
       throw new ApiError(400, 'Pickup and destination must be different.');
-    await record<Anchor>(c, 'anchors', pickupId);
-    await record<Anchor>(c, 'anchors', dropoffId);
+    const { data: pickupSnapshot } = await record<Anchor>(
+      c,
+      'anchors',
+      pickupId,
+    );
+    const { data: dropoffSnapshot } = await record<Anchor>(
+      c,
+      'anchors',
+      dropoffId,
+    );
+    if (!pickupSnapshot.active || !dropoffSnapshot.active)
+      throw new ApiError(409, 'Choose active pickup locations.');
     const ts = Date.parse(txt(body.scheduledAt));
     if (
       !Number.isFinite(ts) ||
@@ -724,6 +808,8 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       driverId: c.role === 'admin' && body.driverId ? txt(body.driverId) : null,
       pickupId,
       dropoffId,
+      pickupSnapshot,
+      dropoffSnapshot,
       scheduledAt: new Date(ts).toISOString(),
       status: 'pending',
       activity: txt(body.activity, 2, 100),
@@ -768,7 +854,17 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         throw new ApiError(409, 'Only unstarted rides can be assigned.');
       r.driverId = txt(body.driverId);
       r.status = 'pending';
+      clearLocation(c, r);
       message = 'Driver assigned. Their confirmation is needed.';
+    } else if (action === 'decline') {
+      requireRole(c, 'driver');
+      if (!['pending', 'accepted'].includes(r.status))
+        throw new ApiError(409, 'Only unstarted requests can be declined.');
+      const reason = txt(body.reason, 4, 500);
+      r.driverId = null;
+      r.status = 'pending';
+      clearLocation(c, r);
+      message = `Driver declined: ${reason}. Coordinator reassignment is needed.`;
     } else if (action === 'accept') {
       requireRole(c, 'driver');
       if (r.status !== 'pending')
@@ -784,6 +880,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
           409,
           'Pickup check-in opens 30 minutes before the scheduled time.',
         );
+      if (!c.demo) await requireProximity(c, r, 'pickup');
       r.status = 'arrived';
       const buffer = new Uint32Array(1);
       crypto.getRandomValues(buffer);
@@ -828,6 +925,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
           `Incorrect code. ${5 - r.otpAttempts} attempts left.`,
         );
       }
+      if (!c.demo) await requireProximity(c, r, 'pickup');
       r.status = 'in_progress';
       r.startedAt = now();
       r.otp = null;
@@ -840,25 +938,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
           409,
           'The ride must be in progress before completion.',
         );
-      if (!c.demo) {
-        if (
-          r.lat === null ||
-          r.lng === null ||
-          !r.locationAt ||
-          Date.parse(r.locationAt) < Date.now() - 60000 ||
-          (r.accuracy ?? 9999) > 100
-        )
-          throw new ApiError(
-            409,
-            'A current GPS fix within 100 m accuracy is required to confirm drop-off.',
-          );
-        const { data: a } = await record<Anchor>(c, 'anchors', r.dropoffId);
-        if (distance(r.lat, r.lng, a.lat, a.lng) > 500)
-          throw new ApiError(
-            409,
-            'Complete the ride within 500 m of the destination.',
-          );
-      }
+      if (!c.demo) await requireProximity(c, r, 'dropoff');
       r.status = 'completed';
       r.completedAt = now();
       message = 'Drop-off confirmed. Ride completed.';
@@ -902,7 +982,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
   }
   if (op === 'location') {
     requireRole(c, 'driver');
-    const { data: r, version } = await record<Ride>(c, 'rides', txt(body.id));
+    const { data: r } = await record<Ride>(c, 'rides', txt(body.id));
     if (
       r.driverId !== c.recordId ||
       !['accepted', 'arrived', 'in_progress'].includes(r.status)
@@ -911,32 +991,78 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         403,
         'Location sharing is restricted to your active ride.',
       );
-    const { data: d } = await record<Driver>(c, 'drivers', c.recordId!);
-    driverReady(d);
-    r.lat = number(body.lat, -90, 90);
-    r.lng = number(body.lng, -180, 180);
-    r.accuracy = number(body.accuracy, 0, 100000);
+    const { data: driver, version: driverVersion } = await record<Driver>(
+      c,
+      'drivers',
+      c.recordId!,
+    );
+    driverReady(driver);
     if (body.source === 'simulation' && !c.demo)
       throw new ApiError(
         403,
         'Simulated locations are limited to practice mode.',
       );
-    r.locationSource = body.source === 'simulation' ? 'simulation' : 'device';
-    r.locationAt = now();
-    await save(c, 'rides', r.id, r, version);
+    if (
+      body.source !== undefined &&
+      body.source !== 'device' &&
+      body.source !== 'simulation'
+    )
+      throw new ApiError(400, 'Unknown location source.');
+    const captured = Date.parse(txt(body.capturedAt, 20, 40));
+    if (
+      !Number.isFinite(captured) ||
+      captured < Date.now() - 30000 ||
+      captured > Date.now() + 10000
+    )
+      throw new ApiError(
+        400,
+        'Location is too old or its device clock is incorrect. Acquire a fresh GPS fix.',
+      );
+    const lat = number(body.lat, -90, 90),
+      lng = number(body.lng, -180, 180),
+      accuracy = number(body.accuracy, 0, 100000);
+    const source = body.source === 'simulation' ? 'simulation' : 'device';
+    c.writes.push(
+      db()
+        .prepare(`INSERT INTO ride_locations (workspace,ride_id,lat,lng,accuracy,captured_at,received_at,source)
+      SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM records WHERE workspace=? AND kind='rides' AND id=? AND json_extract(data,'$.driverId')=? AND json_extract(data,'$.status') IN ('accepted','arrived','in_progress'))
+      AND EXISTS (SELECT 1 FROM records WHERE workspace=? AND kind='drivers' AND id=? AND version=?)
+      ON CONFLICT(workspace,ride_id) DO UPDATE SET lat=excluded.lat,lng=excluded.lng,accuracy=excluded.accuracy,captured_at=excluded.captured_at,received_at=excluded.received_at,source=excluded.source
+      WHERE excluded.captured_at>ride_locations.captured_at`)
+        .bind(
+          c.workspace,
+          r.id,
+          lat,
+          lng,
+          accuracy,
+          new Date(captured).toISOString(),
+          now(),
+          source,
+          c.workspace,
+          r.id,
+          c.recordId,
+          c.workspace,
+          driver.id,
+          driverVersion,
+        ),
+    );
     return { message: 'Location shared.' };
   }
   if (op === 'event.resolve') {
     requireRole(c, 'admin');
     const note = txt(body.note, 4, 500);
-    const result = await db()
-      .prepare(
-        "UPDATE events SET resolved=1,note=? WHERE workspace=? AND id=? AND kind='sos' AND resolved=0",
-      )
-      .bind(`${c.name}: ${note}`, c.workspace, txt(body.id))
-      .run();
-    if (!result.meta.changes)
-      throw new ApiError(409, 'This alert is already resolved or unavailable.');
+    c.writes.push(
+      db()
+        .prepare(
+          "UPDATE events SET resolved=1,note=? WHERE workspace=? AND id=? AND kind='sos' AND resolved=0",
+        )
+        .bind(`${c.name}: ${note}`, c.workspace, txt(body.id)),
+    );
+    await audit(
+      c,
+      `${c.name} resolved help request ${txt(body.id)}: ${note}`,
+      'safety',
+    );
     return { message: 'Help request resolved.' };
   }
   if (op === 'settings') {
@@ -945,11 +1071,14 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       coordinator: txt(body.coordinator, 2, 100),
       contactPhone: phone(body.contactPhone, true),
       pilotName: txt(body.pilotName, 2, 100),
+      smsConsent: bool(body.smsConsent),
     };
-    await db()
-      .prepare('UPDATE workspaces SET settings=? WHERE id=?')
-      .bind(JSON.stringify(s), c.workspace)
-      .run();
+    c.writes.push(
+      db()
+        .prepare('UPDATE workspaces SET settings=? WHERE id=?')
+        .bind(JSON.stringify(s), c.workspace),
+    );
+    await audit(c, `${c.name} updated pilot settings.`, 'settings');
     return { message: 'Pilot settings saved.' };
   }
   if (op === 'member.remove') {
@@ -966,11 +1095,12 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         'You cannot remove your own coordinator account.',
       );
     const reason = txt(body.reason, 4, 500);
-    const result = await db()
-      .prepare('DELETE FROM members WHERE email=?')
-      .bind(e)
-      .run();
-    if (!result.meta.changes) throw new ApiError(404, 'Account not found.');
+    if (e === env.KY_BOOTSTRAP_ADMIN_EMAIL?.toLowerCase())
+      throw new ApiError(
+        409,
+        'The initial owner account cannot be revoked here.',
+      );
+    c.writes.push(db().prepare('DELETE FROM members WHERE email=?').bind(e));
     await audit(
       c,
       `${c.name} revoked pilot access for ${e}: ${reason}`,
@@ -1002,12 +1132,13 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       .bind(e)
       .first();
     if (exists) throw new ApiError(409, 'This email already has pilot access.');
-    await db()
-      .prepare(
-        'INSERT INTO members (email,role,record_id,name) VALUES (?,?,?,?)',
-      )
-      .bind(e, role, recordId, txt(body.name, 2, 100))
-      .run();
+    c.writes.push(
+      db()
+        .prepare(
+          'INSERT OR IGNORE INTO members (email,role,record_id,name) VALUES (?,?,?,?)',
+        )
+        .bind(e, role, recordId, txt(body.name, 2, 100)),
+    );
     await audit(c, `${c.name} granted ${role} access to ${e}.`, 'access');
     return {
       message:
@@ -1022,4 +1153,88 @@ export function distance(a: number, b: number, c: number, d: number) {
     Math.sin(rad(c - a) / 2) ** 2 +
     Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(rad(d - b) / 2) ** 2;
   return 6371000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+type LocationRow = {
+  ride_id: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  captured_at: string;
+  received_at: string;
+  source: 'device' | 'simulation';
+};
+function mergeLocation(c: Context, r: Ride, l?: LocationRow | null): Ride {
+  if (l)
+    return {
+      ...r,
+      lat: l.lat,
+      lng: l.lng,
+      accuracy: l.accuracy,
+      locationAt: l.captured_at,
+      locationReceivedAt: l.received_at,
+      locationSource: l.source,
+    };
+  return c.demo
+    ? r
+    : {
+        ...r,
+        lat: null,
+        lng: null,
+        accuracy: null,
+        locationAt: null,
+        locationSource: null,
+      };
+}
+async function withLocation(c: Context, r: Ride) {
+  const l = await db()
+    .prepare('SELECT * FROM ride_locations WHERE workspace=? AND ride_id=?')
+    .bind(c.workspace, r.id)
+    .first<LocationRow>();
+  return mergeLocation(c, r, l);
+}
+function clearLocation(c: Context, r: Ride) {
+  r.lat = null;
+  r.lng = null;
+  r.locationAt = null;
+  r.accuracy = null;
+  r.locationSource = null;
+  c.after.push(
+    db()
+      .prepare('DELETE FROM ride_locations WHERE workspace=? AND ride_id=?')
+      .bind(c.workspace, r.id),
+  );
+}
+async function requireProximity(
+  c: Context,
+  r: Ride,
+  leg: 'pickup' | 'dropoff',
+) {
+  if (
+    r.lat === null ||
+    r.lng === null ||
+    !r.locationAt ||
+    Date.parse(r.locationAt) < Date.now() - 60000 ||
+    (r.accuracy ?? 9999) > 100 ||
+    r.locationSource !== 'device'
+  )
+    throw new ApiError(
+      409,
+      'A fresh device GPS fix within 100 m accuracy is required for pickup and drop-off.',
+    );
+  const snapshot = leg === 'pickup' ? r.pickupSnapshot : r.dropoffSnapshot;
+  const a =
+    snapshot ??
+    (
+      await record<Anchor>(
+        c,
+        'anchors',
+        leg === 'pickup' ? r.pickupId : r.dropoffId,
+      )
+    ).data;
+  if (distance(r.lat, r.lng, a.lat, a.lng) > 200)
+    throw new ApiError(
+      409,
+      `Confirm ${leg} within 200 m of its meeting point.`,
+    );
 }

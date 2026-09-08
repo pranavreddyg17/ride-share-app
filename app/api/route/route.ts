@@ -1,9 +1,13 @@
 import { ApiError, context, record, canSeeRide } from '@/lib/server';
 import type { Anchor, Ride } from '@/lib/types';
+import { env } from 'cloudflare:workers';
+import { directions } from '@/lib/providers';
+import { rateLimit } from '@/lib/reliability';
 export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
   try {
     const c = await context(req);
+    await rateLimit(c, 'route', 30);
     const url = new URL(req.url),
       id = url.searchParams.get('id');
     let pickupId = url.searchParams.get('pickup');
@@ -23,8 +27,12 @@ export async function GET(req: Request) {
         'Choose different pickup and destination locations.',
       );
     const [{ data: pickup }, { data: dropoff }] = await Promise.all([
-      record<Anchor>(c, 'anchors', pickupId),
-      record<Anchor>(c, 'anchors', dropoffId),
+      ride?.pickupSnapshot
+        ? { data: ride.pickupSnapshot }
+        : record<Anchor>(c, 'anchors', pickupId),
+      ride?.dropoffSnapshot
+        ? { data: ride.dropoffSnapshot }
+        : record<Anchor>(c, 'anchors', dropoffId),
     ]);
     const current = url.searchParams.get('leg') === 'current';
     if (
@@ -41,37 +49,20 @@ export async function GET(req: Request) {
       );
     const a = current ? { lat: ride!.lat!, lng: ride!.lng! } : pickup;
     const b = current && ride!.status !== 'in_progress' ? pickup : dropoff;
-    const endpoint = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-    const res = await fetch(endpoint, {
-      signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'KineticYouthPilot/1.0' },
+    let route;
+    try {
+      route = await directions(a, b, env.MAPBOX_ACCESS_TOKEN, c.demo);
+    } catch (e) {
+      throw new ApiError(
+        503,
+        e instanceof Error ? e.message : 'Road directions unavailable.',
+      );
+    }
+    return Response.json(route, {
+      headers: {
+        'Cache-Control': current ? 'private, no-store' : 'private, max-age=300',
+      },
     });
-    if (!res.ok)
-      throw new ApiError(503, 'Road directions are temporarily unavailable.');
-    const data = (await res.json()) as {
-      code: string;
-      routes: {
-        geometry: { coordinates: number[][] };
-        distance: number;
-        duration: number;
-      }[];
-    };
-    if (data.code !== 'Ok' || !data.routes?.length)
-      throw new ApiError(503, 'A road route could not be found.');
-    return Response.json(
-      {
-        coordinates: data.routes[0].geometry.coordinates,
-        distance: data.routes[0].distance,
-        duration: data.routes[0].duration,
-      },
-      {
-        headers: {
-          'Cache-Control': current
-            ? 'private, no-store'
-            : 'private, max-age=300',
-        },
-      },
-    );
   } catch (e) {
     return Response.json(
       {

@@ -55,7 +55,7 @@ export default async function Login() {
         <a
           className="btn"
           target="_top"
-          href={user ? '/' : chatGPTSignInPath('/')}
+          href={user ? '/?mode=practice' : chatGPTSignInPath('/?mode=practice')}
         >
           Explore the practice workspace
         </a>
@@ -67,8 +67,8 @@ export default async function Login() {
           </span>
         </div>
         <p style={{ fontSize: 12, marginTop: 24 }}>
-          Practice mode uses fictional people and rides. SMS login and text
-          alerts are not connected in this version.
+          Practice mode uses fictional people and rides. Sign-in uses your
+          ChatGPT account. Ride text alerts require coordinator setup.
         </p>
         {user && (
           <div style={{ fontSize: 12, color: '#768c99' }}>

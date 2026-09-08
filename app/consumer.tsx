@@ -1,5 +1,7 @@
 'use client';
+import { postMutation } from '@/lib/client-api';
 import { useState, useEffect, useRef } from 'react';
+import { watchDevicePosition } from '@/lib/gps';
 import {
   CarFront,
   ArrowRight,
@@ -431,8 +433,11 @@ export function TripScreen({
   const tick = useRef(0);
   const d = state.drivers.find((d) => d.id === ride.driverId),
     f = state.families.find((f) => f.id === ride.familyId),
-    pickup = state.anchors.find((a) => a.id === ride.pickupId),
-    dropoff = state.anchors.find((a) => a.id === ride.dropoffId);
+    pickup =
+      ride.pickupSnapshot ?? state.anchors.find((a) => a.id === ride.pickupId),
+    dropoff =
+      ride.dropoffSnapshot ??
+      state.anchors.find((a) => a.id === ride.dropoffId);
   const isDriver = state.role === 'driver',
     terminal = ['completed', 'cancelled'].includes(ride.status),
     age = ride.locationAt
@@ -461,24 +466,17 @@ export function TripScreen({
     lng: number,
     accuracy: number,
     source: 'device' | 'simulation',
+    capturedAt = Date.now(),
   ) {
-    const res = await fetch(
-      `/api/state?mode=${state.demo ? 'practice' : 'pilot'}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-ky-role': 'driver' },
-        body: JSON.stringify({
-          op: 'location',
-          id: ride.id,
-          lat,
-          lng,
-          accuracy,
-          source,
-        }),
-      },
-    );
-    const body = (await res.json()) as { error?: string };
-    if (!res.ok) throw new Error(body.error ?? 'Location update failed.');
+    await postMutation(state.demo, 'driver', {
+      op: 'location',
+      id: ride.id,
+      lat,
+      lng,
+      accuracy,
+      source,
+      capturedAt: new Date(capturedAt).toISOString(),
+    });
     setGpsMessage(
       source === 'simulation'
         ? 'Simulated GPS delivered to the ride.'
@@ -486,7 +484,9 @@ export function TripScreen({
     );
   }
   const sendRef = useRef(sendLocation);
-  sendRef.current = sendLocation;
+  useEffect(() => {
+    sendRef.current = sendLocation;
+  });
   useEffect(() => {
     if (tracking === 'off' || !isDriver || terminal) return;
     if (tracking === 'device') {
@@ -495,7 +495,8 @@ export function TripScreen({
         setTracking('off');
         return;
       }
-      const watch = navigator.geolocation.watchPosition(
+      const stop = watchDevicePosition(
+        navigator.geolocation,
         (p) => {
           if (Date.now() - tick.current < 3000) return;
           tick.current = Date.now();
@@ -505,6 +506,7 @@ export function TripScreen({
               p.coords.longitude,
               p.coords.accuracy,
               'device',
+              p.timestamp,
             )
             .catch((e) => setGpsMessage(e.message));
         },
@@ -516,9 +518,8 @@ export function TripScreen({
           );
           setTracking('off');
         },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
       );
-      return () => navigator.geolocation.clearWatch(watch);
+      return stop;
     }
     if (!state.demo || !road?.coordinates.length) {
       setTracking('off');
@@ -554,36 +555,38 @@ export function TripScreen({
     const timer = setInterval(move, 3000);
     return () => clearInterval(timer);
   }, [tracking, isDriver, terminal, ride.id, road, state.demo]);
-  const lastEta = useRef(0);
   useEffect(() => {
     if (stale || terminal || !active(ride.status)) {
       setEta(null);
       return;
     }
-    if (Date.now() - lastEta.current < 15000) return;
-    lastEta.current = Date.now();
     const controller = new AbortController();
-    fetch(
-      `/api/route?mode=${state.demo ? 'practice' : 'pilot'}&id=${encodeURIComponent(ride.id)}&leg=current`,
-      { headers: { 'x-ky-role': state.role }, signal: controller.signal },
-    )
-      .then(async (r) => {
-        const v = (await r.json()) as { duration?: number };
-        if (r.ok && v.duration !== undefined)
-          setEta(Math.max(1, Math.ceil(v.duration / 60)));
-        else setEta(null);
-      })
-      .catch(() => setEta(null));
-    return () => controller.abort();
-  }, [
-    ride.locationAt,
-    ride.status,
-    stale,
-    terminal,
-    ride.id,
-    state.demo,
-    state.role,
-  ]);
+    let inFlight = false;
+    async function refreshEta() {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      await fetch(
+        `/api/route?mode=${state.demo ? 'practice' : 'pilot'}&id=${encodeURIComponent(ride.id)}&leg=current`,
+        { headers: { 'x-ky-role': state.role }, signal: controller.signal },
+      )
+        .then(async (r) => {
+          const v = (await r.json()) as { duration?: number };
+          if (r.ok && v.duration !== undefined)
+            setEta(Math.max(1, Math.ceil(v.duration / 60)));
+          else setEta(null);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setEta(null);
+        });
+      inFlight = false;
+    }
+    void refreshEta();
+    const timer = setInterval(refreshEta, 15000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [ride.status, stale, terminal, ride.id, state.demo, state.role]);
   const titles: Record<string, string> = isDriver
     ? {
         pending: 'A new ride for you.',
@@ -934,7 +937,7 @@ export function TripScreen({
                   </button>
                   <a
                     className="text-link"
-                    href="/?viewAs=family"
+                    href="/?mode=practice&viewAs=family"
                     target="_blank"
                     rel="noreferrer"
                     style={{ marginTop: 13 }}
@@ -993,10 +996,18 @@ export function TripScreen({
           {['pending', 'accepted', 'arrived'].includes(ride.status) && (
             <button
               className="cancel-trip"
-              onClick={() => open({ kind: 'cancel', ride })}
+              onClick={() =>
+                open({
+                  kind:
+                    isDriver && ['pending', 'accepted'].includes(ride.status)
+                      ? 'decline'
+                      : 'cancel',
+                  ride,
+                })
+              }
               disabled={busy}
             >
-              {isDriver && ride.status === 'pending'
+              {isDriver && ['pending', 'accepted'].includes(ride.status)
                 ? 'Decline ride'
                 : 'Cancel ride'}
             </button>

@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
     "db:local": "wrangler d1 migrations apply DB --local --config wrangler.local.json",
-    "test:api": "node tests/api.integration.mjs"
+    "test:api": "node tests/api.integration.mjs",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

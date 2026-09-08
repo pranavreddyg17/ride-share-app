@@ -32,7 +32,7 @@ export type Modal =
   | { kind: 'family'; family?: Family }
   | { kind: 'anchor'; anchor?: Anchor }
   | { kind: 'driver-status'; driver: Driver; status: string }
-  | { kind: 'assign' | 'cancel' | 'help' | 'rating'; ride: Ride }
+  | { kind: 'assign' | 'cancel' | 'decline' | 'help' | 'rating'; ride: Ride }
   | { kind: 'resolve'; event: Activity }
   | { kind: 'member' }
   | { kind: 'member-remove'; email: string }
@@ -45,6 +45,7 @@ const blankDriver: Driver = {
   name: '',
   email: '',
   phone: '',
+  smsConsent: false,
   school: 'Marcus High School',
   dob: '',
   vehicle: '',
@@ -69,6 +70,7 @@ const blankFamily: Family = {
   student: '',
   email: '',
   phone: '',
+  smsConsent: false,
   school: 'Marcus High School',
   consent: false,
   emergency: '',
@@ -144,6 +146,7 @@ export function AppDialog({
         : 'Update driver status',
     assign: 'Assign a driver',
     cancel: 'Cancel this ride',
+    decline: 'Return this ride to the coordinator',
     help: 'Request coordinator help',
     rating: 'How was the ride?',
     resolve: 'Resolve help request',
@@ -165,7 +168,9 @@ export function AppDialog({
     assign:
       'Only approved, current drivers can be assigned. Availability and conflicting trips are checked when you save.',
     cancel: 'Cancellation updates the family and driver’s ride views.',
-    help: 'This creates an in-app alert. The pilot does not send emergency SMS or contact emergency services.',
+    decline:
+      'Your coordinator will find another driver. The family’s request stays open.',
+    help: 'This alerts your coordinator in the app. Text delivery depends on service setup. For immediate danger, call emergency services.',
     rating: 'Your feedback helps the coordinator improve future rides.',
     resolve: 'Record what happened and how this request was handled.',
     member:
@@ -228,11 +233,12 @@ export function AppDialog({
             driverId,
           };
           break;
+        case 'decline':
         case 'cancel':
           payload = {
             op: 'ride.action',
             id: modal.ride.id,
-            action: 'cancel',
+            action: modal.kind,
             reason,
           };
           break;
@@ -275,9 +281,7 @@ export function AppDialog({
     }
   }
   const dField = (
-    key: {
-      [K in keyof Driver]: Driver[K] extends string ? K : never;
-    }[keyof Driver],
+    key: Extract<keyof Driver, string>,
     label: string,
     type = 'text',
     placeholder = '',
@@ -288,7 +292,7 @@ export function AppDialog({
         maxLength={200}
         type={type}
         placeholder={placeholder}
-        value={String(driver[key])}
+        value={typeof driver[key] === 'string' ? driver[key] : ''}
         onChange={(e) => setDriver({ ...driver, [key]: e.target.value })}
       />
     </Field>
@@ -391,6 +395,12 @@ export function AppDialog({
               />
             </Field>
           )}
+          <Check
+            checked={driver.smsConsent === true}
+            onChange={(v) => setDriver({ ...driver, smsConsent: v })}
+            label="This driver agreed to receive operational text alerts at this number."
+            hint="Only enable after you have recorded their communication consent."
+          />
           <Field label="Pickup notes (optional)">
             <textarea
               maxLength={500}
@@ -481,6 +491,12 @@ export function AppDialog({
             }
             hint="Keep the signed consent and emergency plan in your organization’s secure records."
           />
+          <Check
+            checked={family.smsConsent === true}
+            onChange={(v) => setFamily({ ...family, smsConsent: v })}
+            label="The guardian agreed to receive operational text alerts at this number."
+            hint="Only enable after you have recorded their communication consent."
+          />
         </>
       )}
       {modal.kind === 'anchor' && (
@@ -563,9 +579,14 @@ export function AppDialog({
           />
         </Field>
       )}
-      {['driver-status', 'cancel', 'help', 'resolve', 'member-remove'].includes(
-        modal.kind,
-      ) && (
+      {[
+        'driver-status',
+        'cancel',
+        'decline',
+        'help',
+        'resolve',
+        'member-remove',
+      ].includes(modal.kind) && (
         <Field
           label={
             modal.kind === 'resolve' ? 'Resolution notes' : 'Reason / details'
@@ -744,7 +765,9 @@ export function AppDialog({
                     ? 'Cancel ride'
                     : modal.kind === 'member'
                       ? 'Grant access'
-                      : 'Save changes'}
+                      : modal.kind === 'decline'
+                        ? 'Return request'
+                        : 'Save changes'}
         </button>
       </div>
     </form>

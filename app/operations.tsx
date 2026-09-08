@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ShieldCheck,
   AlertCircle,
@@ -15,7 +15,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Heading, type ViewProps } from './dashboard';
 import { Avatar, Badge } from './shell';
-import { Field, EmptyState } from './controls';
+import { Field, EmptyState, Check as CheckField } from './controls';
 import { DAYS, DRIVER_CHECKS, date, time, type Slot } from '@/lib/types';
 import type { Commit } from './dialogs';
 export function Safety({ state, open, navigate }: ViewProps) {
@@ -30,8 +30,8 @@ export function Safety({ state, open, navigate }: ViewProps) {
       <div className="notice warning" style={{ marginBottom: 22 }}>
         <AlertCircle />
         <div>
-          Help requests appear here while the app is open. SMS and push alerts
-          are not connected. For immediate danger,{' '}
+          Help requests appear here while the app is open. Text alerts require
+          SMS setup and delivery confirmation. For immediate danger,{' '}
           <a href="tel:911">
             <strong>call 911</strong>
           </a>
@@ -397,6 +397,11 @@ export function Settings({
                 }
               />
             </Field>
+            <CheckField
+              checked={settings.smsConsent === true}
+              onChange={(v) => setSettings({ ...settings, smsConsent: v })}
+              label="The coordinator agreed to receive operational text alerts at this number."
+            />
             <Field label="Coordinator name">
               <input
                 required
@@ -443,10 +448,13 @@ export function Settings({
           <div className="notice" style={{ marginBottom: 20 }}>
             <ShieldCheck />
             {state.demo
-              ? 'The current site is a private preview, accessible only to its owner.'
+              ? 'Practice data is isolated from the real pilot. Only registered accounts can access pilot records.'
               : 'Add drivers, families, anchor locations, and account access before coordinating trips.'}
           </div>
-          <a className="btn primary" href={state.demo ? '/?mode=pilot' : '/'}>
+          <a
+            className="btn primary"
+            href={state.demo ? '/?mode=pilot' : '/?mode=practice'}
+          >
             {state.demo
               ? 'Open real pilot workspace'
               : 'Return to practice workspace'}
@@ -462,8 +470,8 @@ export function Settings({
             <h2>Sign-in</h2>
             <p>
               Secure ChatGPT sign-in is active. Access to the pilot is granted
-              by verified email. SMS sign-in and text notifications are not
-              connected.
+              by verified email. Ride text alerts are configured separately;
+              phone-number sign-in is not available.
             </p>
             <Link className="text-link" href="/login">
               <LogOut size={15} />
@@ -543,7 +551,7 @@ export function Settings({
             {[
               'Confirm driver eligibility, license restrictions, coverage, consent, and the screening process.',
               'Confirm anchor partners, pickup instructions, and the coordinator’s response process.',
-              'Connect and test SMS / push alerts; in-app help requests are not continuously monitored.',
+              'Connect and test SMS alerts; in-app help requests are not continuously monitored.',
               'Test GPS and handoff on actual phones. This web app tracks only while open.',
               'Configure participant access, retention and backups, and a production maps service.',
             ].map((text, i) => (
@@ -560,6 +568,143 @@ export function Settings({
           </div>
         </section>
       </div>
+      <OperationsStatus demo={state.demo} />
     </>
+  );
+}
+
+type OperationsData = {
+  checks: { name: string; ok: boolean; detail: string }[];
+  notifications: {
+    id: string;
+    ride_id: string;
+    status: string;
+    error: string;
+    recipient_role: string;
+    created_at: string;
+  }[];
+  staleRides: { id: string; status: string }[];
+  unresolvedHelp: number;
+  serverTime: string;
+};
+function OperationsStatus({ demo }: { demo: boolean }) {
+  const [data, setData] = useState<OperationsData | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      setBusy(true);
+      try {
+        const res = await fetch(
+          `/api/operations?mode=${demo ? 'practice' : 'pilot'}`,
+          { signal },
+        );
+        const value = (await res.json()) as OperationsData & { error?: string };
+        if (!res.ok)
+          throw new Error(value.error ?? 'Service status unavailable.');
+        if (!signal?.aborted) {
+          setData(value);
+          setError('');
+        }
+      } catch (e) {
+        if (!signal?.aborted) setError((e as Error).message);
+      } finally {
+        if (!signal?.aborted) setBusy(false);
+      }
+    },
+    [demo],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    void refresh(controller.signal);
+    const timer = setInterval(() => void refresh(controller.signal), 30000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [refresh]);
+  return (
+    <section className="panel settings-card" style={{ marginTop: 24 }}>
+      <div className="panel-heading" style={{ padding: 0, marginBottom: 18 }}>
+        <div>
+          <h2>Service status</h2>
+          <p>
+            Configuration checks and recent text alerts. A configured service
+            still needs a real ride rehearsal.
+          </p>
+        </div>
+        <button
+          className="btn small"
+          disabled={busy}
+          onClick={() => void refresh()}
+        >
+          {busy ? 'Checking…' : 'Refresh'}
+        </button>
+      </div>
+      {error && (
+        <p className="error-message" role="alert">
+          {error} {data ? 'The results below may be out of date.' : ''}
+        </p>
+      )}
+      {data && (
+        <>
+          <p>
+            Last checked {new Date(data.serverTime).toLocaleTimeString()} ·{' '}
+            {data.unresolvedHelp} open help requests · {data.staleRides.length}{' '}
+            active rides without current GPS
+          </p>
+          <div className="settings-grid">
+            {data.checks.map((check) => (
+              <div className="detail-pair" key={check.name}>
+                <div>
+                  <strong>{check.name}</strong>
+                  <p style={{ margin: '6px 0 0' }}>{check.detail}</p>
+                </div>
+                <span className={`badge ${check.ok ? 'green' : 'amber'}`}>
+                  {check.ok ? 'Configured' : 'Needs setup'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <h3 style={{ marginTop: 24 }}>Recent text alerts</h3>
+          {!data.notifications.length ? (
+            <p>No text alerts recorded in this workspace.</p>
+          ) : (
+            data.notifications.map((item) => (
+              <div className="detail-pair" key={item.id}>
+                <div>
+                  <strong>
+                    {item.recipient_role} · Ride {item.ride_id.slice(0, 8)}
+                  </strong>
+                  <p style={{ margin: '6px 0 0' }}>
+                    {item.error || new Date(item.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <span
+                  className={`badge ${item.status === 'delivered' ? 'green' : 'amber'}`}
+                >
+                  {item.status.replaceAll('_', ' ')}
+                </span>
+              </div>
+            ))
+          )}
+          <p>
+            “Accepted” means the provider accepted the text. Only “delivered”
+            confirms a delivery receipt. Check failed or unknown messages and
+            contact participants directly when needed.
+          </p>
+        </>
+      )}
+      <a
+        className="btn"
+        href={`/api/export?mode=${demo ? 'practice' : 'pilot'}`}
+      >
+        Download operational records
+      </a>
+      <p>
+        The export contains personal information. Store it securely; it is not a
+        full database backup.
+      </p>
+    </section>
   );
 }

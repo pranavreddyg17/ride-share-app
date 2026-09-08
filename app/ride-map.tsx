@@ -43,8 +43,23 @@ export function RideMap({
   useEffect(() => {
     let stopped = false;
     let observer: ResizeObserver | undefined;
-    import('leaflet')
-      .then((lib) => {
+    const abort = new AbortController();
+    Promise.all([
+      import('leaflet'),
+      fetch(`/api/map-config?mode=${demo ? 'practice' : 'pilot'}`, {
+        headers: { 'x-ky-role': role },
+        signal: abort.signal,
+      }).then(async (res) => {
+        const config = (await res.json()) as {
+          url: string;
+          attribution: string;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(config.error ?? 'The map could not load.');
+        return config;
+      }),
+    ])
+      .then(([lib, config]) => {
         if (stopped || !node.current) return;
         L.current = lib;
         const instance = lib
@@ -53,10 +68,9 @@ export function RideMap({
         map.current = instance;
         lib.control.zoom({ position: 'topright' }).addTo(instance);
         lib
-          .tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          .tileLayer(config.url, {
             maxZoom: 19,
-            attribution:
-              '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+            attribution: config.attribution,
           })
           .on('tileerror', () =>
             setError(
@@ -69,17 +83,30 @@ export function RideMap({
         observer.observe(node.current);
         setReady(true);
       })
-      .catch(() => setError('The map could not load. Please refresh.'));
+      .catch((e) => {
+        if (!stopped)
+          setError(e.message ?? 'The map could not load. Please refresh.');
+      });
     return () => {
       stopped = true;
+      abort.abort();
       observer?.disconnect();
       cancelAnimationFrame(animation.current);
       map.current?.remove();
       map.current = null;
       car.current = null;
+      setReady(false);
     };
-  }, []);
-  const anchorKey = JSON.stringify(anchors);
+  }, [demo, role]);
+  const anchorKey = JSON.stringify(
+    anchors.map((a) =>
+      a.id === ride?.pickupSnapshot?.id
+        ? ride.pickupSnapshot
+        : a.id === ride?.dropoffSnapshot?.id
+          ? ride.dropoffSnapshot
+          : a,
+    ),
+  );
   const stableAnchors = useMemo(
     () => JSON.parse(anchorKey) as Anchor[],
     [anchorKey],

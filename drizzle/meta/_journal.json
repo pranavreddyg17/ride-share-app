@@ -8,6 +8,13 @@
       "when": 1788807465187,
       "tag": "0000_free_the_fallen",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788887593387,
+      "tag": "0001_noisy_photon",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 'use client';
+import { watchDevicePosition } from '@/lib/gps';
 import { useState, useEffect, useRef } from 'react';
 import { ChevronRight as ChevronIcon } from 'lucide-react';
 import {
@@ -341,8 +342,11 @@ function RideDetail({
   const lastPing = useRef(0);
   const driver = state.drivers.find((d) => d.id === ride.driverId),
     family = state.families.find((f) => f.id === ride.familyId),
-    pickup = state.anchors.find((a) => a.id === ride.pickupId),
-    dropoff = state.anchors.find((a) => a.id === ride.dropoffId);
+    pickup =
+      ride.pickupSnapshot ?? state.anchors.find((a) => a.id === ride.pickupId),
+    dropoff =
+      ride.dropoffSnapshot ??
+      state.anchors.find((a) => a.id === ride.dropoffId);
   const status = ride.status;
   const terminal = ['completed', 'cancelled'].includes(status);
   const stale =
@@ -359,33 +363,26 @@ function RideDetail({
       setSharing(false);
       return;
     }
-    const id = navigator.geolocation.watchPosition(
+    const stop = watchDevicePosition(
+      navigator.geolocation,
       (position) => {
         if (Date.now() - lastPing.current < 5000) return;
         lastPing.current = Date.now();
         const { latitude, longitude, accuracy } = position.coords;
-        fetch(`/api/state?mode=${state.demo ? 'practice' : 'pilot'}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-ky-role': state.role,
-          },
-          body: JSON.stringify({
+        currentCommit
+          .current({
             op: 'location',
             id: ride.id,
             lat: latitude,
             lng: longitude,
             accuracy,
-          }),
-        })
-          .then(async (r) => {
-            if (!r.ok) {
-              const v = (await r.json()) as { error?: string };
-              throw new Error(v.error);
-            }
-            setGpsError('');
+            source: 'device',
+            capturedAt: new Date(position.timestamp).toISOString(),
           })
-          .catch((e) => setGpsError(e.message));
+          .catch((error: Error) => {
+            setGpsError(error.message);
+            setSharing(false);
+          });
       },
       (e) => {
         setGpsError(
@@ -395,9 +392,8 @@ function RideDetail({
         );
         setSharing(false);
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
     );
-    return () => navigator.geolocation.clearWatch(id);
+    return stop;
   }, [sharing, isDriver, terminal, ride.id, state.demo, state.role]);
   async function action(action: string, extra: Record<string, unknown> = {}) {
     setBusy(true);
@@ -783,7 +779,7 @@ function RideDetail({
                       >
                         {state.demo
                           ? 'Practice mode skips the GPS distance check.'
-                          : 'Requires a recent, accurate GPS fix within 500 m of the destination.'}
+                          : 'Requires a recent, accurate GPS fix within 200 m of the destination.'}
                       </p>
                     </>
                   )}
