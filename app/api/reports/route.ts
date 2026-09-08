@@ -1,10 +1,11 @@
+import { withApiLog, methodNotAllowed } from '@/lib/api-log';
 import { ApiError, context, requireRole, state, db } from '@/lib/server';
 import { rateLimit } from '@/lib/reliability';
 import { filterRides, type ReportFilters } from '@/lib/service-hours';
 import { reportWorkbook } from '@/lib/report-workbook';
 import type { ServiceCredit } from '@/lib/types';
 export const dynamic = 'force-dynamic';
-export async function GET(req: Request) {
+export const GET = withApiLog(async function GET(req: Request) {
   try {
     const c = await context(req);
     requireRole(c, 'admin', 'driver');
@@ -26,6 +27,31 @@ export async function GET(req: Request) {
         throw new ApiError(400, 'Use a valid report date.');
     if (filters.from && filters.to && filters.from > filters.to)
       throw new ApiError(400, 'The start date must be before the end date.');
+    if (
+      filters.status &&
+      ![
+        'all',
+        'pending',
+        'accepted',
+        'arrived',
+        'in_progress',
+        'completed',
+        'cancelled',
+      ].includes(filters.status)
+    )
+      throw new ApiError(400, 'Unknown ride status.');
+    if (
+      filters.review &&
+      !['all', 'pending', 'approved', 'excluded', 'not_eligible'].includes(
+        filters.review,
+      )
+    )
+      throw new ApiError(400, 'Unknown credit status.');
+    if (
+      (filters.query?.length ?? 0) > 200 ||
+      (filters.driver?.length ?? 0) > 200
+    )
+      throw new ApiError(400, 'Report filter is too long.');
     if (
       c.role === 'driver' &&
       filters.driver &&
@@ -54,6 +80,13 @@ export async function GET(req: Request) {
           created_at: string;
           resolved: number;
           note: string;
+          actor_id: string | null;
+          actor_email: string | null;
+          actor_role: string | null;
+          action: string | null;
+          request_id: string | null;
+          entity_kind: string | null;
+          entity_id: string | null;
         }>();
       const ids = new Set(rides.map((r) => r.id));
       snapshot.events = rows.results
@@ -66,6 +99,13 @@ export async function GET(req: Request) {
           createdAt: e.created_at,
           resolved: !!e.resolved,
           note: e.note,
+          actorId: e.actor_id,
+          actorEmail: e.actor_email,
+          actorRole: e.actor_role,
+          action: e.action,
+          requestId: e.request_id,
+          entityKind: e.entity_kind,
+          entityId: e.entity_id,
         }));
     }
     const history = await db()
@@ -77,7 +117,13 @@ export async function GET(req: Request) {
     const rideIds = new Set(rides.map((r) => r.id));
     const reviews = history.results
       .map((r) => JSON.parse(r.data) as ServiceCredit)
-      .filter((c) => rideIds.has(c.rideId));
+      .filter(
+        (c) =>
+          rideIds.has(c.rideId) &&
+          c.revision <=
+            (snapshot.credits.find((current) => current.rideId === c.rideId)
+              ?.revision ?? 0),
+      );
     // Preserve current decisions imported from versions that had only an event audit.
     for (const current of snapshot.credits)
       if (
@@ -117,4 +163,11 @@ export async function GET(req: Request) {
       },
     );
   }
-}
+});
+
+const rejectMethod = methodNotAllowed(['GET', 'HEAD']);
+export const POST = rejectMethod;
+export const PUT = rejectMethod;
+export const PATCH = rejectMethod;
+export const DELETE = rejectMethod;
+export const OPTIONS = rejectMethod;

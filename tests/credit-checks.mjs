@@ -86,8 +86,13 @@ export async function creditChecks({
     { ...review, reviewedBy: 'forged@example.com' },
     { 'Idempotency-Key': key },
   );
-  check('retried approval returns original result', () =>
-    assert.deepEqual(retry, first),
+  check(
+    'retried approval returns original result with its own request trace',
+    () => {
+      assert.equal(retry.status, first.status);
+      assert.deepEqual(retry.data, first.data);
+      assert.notEqual(retry.requestId, first.requestId);
+    },
   );
   const credit = (await read(admin)).credits.find((c) => c.rideId === id);
   check('server records reviewer and one current revision', () => {
@@ -225,9 +230,10 @@ export async function creditChecks({
     },
   );
   const ownHistory = await req(driverUser, historyPath);
-  check('driver can read own complete credit history', () =>
-    assert.deepEqual(ownHistory, history),
-  );
+  check('driver can read own complete credit history', () => {
+    assert.equal(ownHistory.status, history.status);
+    assert.deepEqual(ownHistory.data, history.data);
+  });
   const familyHistory = await req(familyUser, historyPath),
     otherHistory = await req(
       driverUser,

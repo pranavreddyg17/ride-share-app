@@ -15,6 +15,9 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Consent-aware Twilio outbox with send claims, provider delivery reconciliation, expiry and visible failed/unknown states. Acceptance is distinguished from delivery. Ambiguous sends are not blindly retried.
 - Admin service status, missing-configuration checks, stale-ride counts, alert history, unresolved help (including older open alerts), and redacted operational JSON export.
 - Monochrome dispatch console, searchable ride ledger, driver service-credit reviews and role-scoped Excel workbooks with full amendment history. Suggested credit uses arrival at pickup through drop-off, including waiting; only admin-approved credit contributes to totals. See [service records](docs/SERVICE_RECORDS.md).
+- Driver, student and vehicle snapshots preserve trip identity after profile edits. Register edits use versions to reject stale overwrites; material driver changes require renewed screening, while contact edits preserve approval.
+- Each account grant has a separate identity. Revoking/regranting access invalidates old writes and retry receipts; a driver record has one linked sign-in account. Membership, bound identity and grant are checked when mutations commit.
+- Admin request logs show endpoint, actor, result, duration and request ID. Durable business events record who changed which record, the action, and the same request ID. Request logs omit bodies, query strings, codes, credentials and GPS payloads. See [IAM and audit](docs/IAM_AND_AUDIT.md).
 
 ## Run locally
 
@@ -51,7 +54,7 @@ The existing Site is identified in `.openai/hosting.json`. Its hosting audience 
 
 Prepared SQL, record versions, current membership checks and database guards enforce mutations. Driver/student trips require a 45-minute scheduling separation; accepted trips reserve 30 minutes in driver availability. This conservative fixed window is not a traffic-aware dispatch optimizer.
 
-The notification processor removes expired request counters, mutation receipts older than 24 hours, outbox entries older than 30 days, and latest GPS for terminal rides after 24 hours. Participant records and activity are retained until the operator applies an approved retention process. The operational export omits pickup codes and is **not** a restorable database backup.
+The notification processor removes request metadata older than 7 days, expired request counters, mutation receipts older than 24 hours, outbox entries older than 30 days, and latest GPS for terminal rides after 24 hours. Participant records and business activity are retained until the operator applies an approved retention process. The operational export omits pickup codes and is **not** a restorable database backup.
 
 Browser GPS requires HTTPS, permission, active connectivity and foreground execution. Locking or backgrounding a phone may stop updates. There is no native background tracking, push notification service, automated matching, in-app turn-by-turn navigation, payments or SMS sign-in. In-app pickup codes and verified-account login work independently of SMS.
 

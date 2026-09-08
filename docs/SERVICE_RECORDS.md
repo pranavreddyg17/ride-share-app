@@ -9,6 +9,7 @@ This local release adds admin dispatch, a full ride ledger, service-credit revie
 - Actual timestamps come from the server when each ride transition succeeds. The app retains requested, scheduled, accepted, arrived, pickup verified, completed, and cancelled times where available.
 - Suggested credit rounds the total elapsed service time to the nearest whole minute. Recorded waiting and driving durations remain separate. Elapsed time is computed from UTC timestamps, including across daylight-saving changes.
 - Existing records without arrival timestamps show unknown service time. The app does not invent or backfill those times from estimates.
+- New rides snapshot student/guardian details when requested and driver/vehicle details during assignment and pickup. Completed records retain those details after later register edits. Older records without these snapshots explicitly show a current-register fallback; historical values cannot be reconstructed reliably.
 - Completed rides require an admin review before appearing in approved service totals. Cancellation does not create credit.
 
 ## Admin workflow
@@ -25,15 +26,15 @@ Drivers can view and export their own credited service. They cannot review credi
 
 ## Excel workbook
 
-| Sheet | Contents |
-| --- | --- |
-| Driver summary | Completed rides, pending/excluded reviews, wait/drive/service minutes, missing timestamps, approved minutes and hours |
-| Ride ledger | Assignment, route snapshots, student/guardian (admin only), status, actual timestamps, time breakdown, current credit and reviewer |
-| Credit reviews | Every saved revision with decision, minutes, reviewer, review timestamp and reason; these rows are history and should not be summed for current totals |
-| Activity | Full activity for the filtered rides, including credit changes and help resolution |
-| Driver register | Relevant drivers, contact/vehicle details, approval, document review flags and expiry dates |
-| Family register | Relevant students/guardians, contacts, consent and emergency contact |
-| Meeting points | Relevant location register; the ride ledger separately preserves the agreed route snapshots |
+| Sheet           | Contents                                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Driver summary  | Completed rides, pending/excluded reviews, wait/drive/service minutes, missing timestamps, approved minutes and hours                                      |
+| Ride ledger     | Assignment, route snapshots, student/guardian (admin only), status, actual timestamps, time breakdown, current credit and reviewer                         |
+| Credit reviews  | Every saved revision with decision, minutes, reviewer, timestamp, reason and a Current decision flag; only current approved decisions contribute to totals |
+| Activity        | Full activity for the filtered rides, including credit changes, help resolution, actor, action, affected record and request ID                             |
+| Driver register | Relevant drivers, contact/vehicle details, approval, document review flags and expiry dates                                                                |
+| Family register | Relevant students/guardians, contacts, consent and emergency contact                                                                                       |
+| Meeting points  | Relevant location register; the ride ledger separately preserves the agreed route snapshots                                                                |
 
 Driver workbooks contain the first three sheets only and omit student and guardian columns. Admin workbooks contain all seven sheets. Register sheets contain participants/locations associated with the filtered rides; use the register screens' CSV exports to include registered people who have no rides.
 
@@ -43,6 +44,8 @@ The **Driver summary** and **Ride ledger** hold current approved totals. **Credi
 
 ## Storage and operational limits
 
-Current decisions use versioned `records` entries of kind `credits`, one per ride. Append-only snapshots use kind `credit_reviews`, keyed by ride and revision, within the existing D1 schema. No new migration is required. Only admin credit mutations write these records. Application revisions are guarded against stale and concurrent writes; completed ride timestamps are not modified by reviews.
+Current decisions use versioned `records` entries of kind `credits`, one per ride. Append-only snapshots use kind `credit_reviews`, keyed by ride and revision. Only admin credit mutations write these records. Application revisions are guarded against stale and concurrent writes; completed ride timestamps are not modified by reviews. The endpoint/IAM hardening release additionally requires migration `0002_clever_golden_guardian.sql` for access-grant identities and audit metadata.
+
+Driver, family, meeting-point and availability edits submit the version originally loaded into the form. If another user saves first, the backend rejects the stale edit. Reload the record before applying changes. Contact and SMS-consent edits preserve driver approval; changes to identity, vehicle, plate, birth date or document expiry clear screening attestations and require admin review. Disabling a meeting point prevents new bookings without altering existing route snapshots.
 
 The local redesign uses a monochrome console, Geist text and tabular time typography, with a static custom vehicle render on sign-in. It does not change the release prerequisites in [TRIAL_RUNBOOK.md](TRIAL_RUNBOOK.md): provider setup, hosted access, real-device GPS rehearsal and other operational checks remain outstanding. No production-parity claim is made.

@@ -1,7 +1,8 @@
+import { withApiLog, methodNotAllowed, traceIdentity } from '@/lib/api-log';
 import { env } from 'cloudflare:workers';
 import { processNotifications } from '@/lib/notifications';
 export const dynamic = 'force-dynamic';
-export async function POST(req: Request) {
+export const POST = withApiLog(async function POST(req: Request) {
   if (
     !env.KY_JOBS_TOKEN ||
     req.headers.get('Authorization') !== `Bearer ${env.KY_JOBS_TOKEN}`
@@ -10,6 +11,12 @@ export async function POST(req: Request) {
       { error: 'Unauthorized' },
       { status: 401, headers: { 'Cache-Control': 'no-store' } },
     );
+  traceIdentity(req, {
+    workspace: 'pilot',
+    actorId: 'notification-job',
+    actorEmail: null,
+    actorRole: 'service',
+  });
   try {
     const result = await processNotifications();
     await env.DB.prepare(
@@ -21,7 +28,15 @@ export async function POST(req: Request) {
   } catch {
     return Response.json(
       { error: 'Notification processing failed' },
-      { status: 503 },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
     );
   }
-}
+});
+
+const rejectMethod = methodNotAllowed(['POST']);
+export const GET = rejectMethod;
+export const PUT = rejectMethod;
+export const PATCH = rejectMethod;
+export const DELETE = rejectMethod;
+export const OPTIONS = rejectMethod;
+export const HEAD = rejectMethod;

@@ -52,7 +52,9 @@ function PlacePicker({
   anchors: Anchor[];
   label: string;
 }) {
-  const items = anchors.map((a) => ({ value: a.id, label: a.name }));
+  const items = anchors
+    .filter((a) => a.active)
+    .map((a) => ({ value: a.id, label: a.name }));
   return (
     <Combobox
       items={items}
@@ -120,11 +122,7 @@ export function ConsumerHome(props: ConsumerProps) {
         <div className="sheet-handle" />
         <div className="trip-panel-content">
           <span className="caps-label">DRIVER HOME</span>
-          <h1>
-            You’re ready for
-            <br />
-            your next ride.
-          </h1>
+          <h1>No assigned rides</h1>
           <p className="panel-copy">
             Your coordinator’s assigned requests will appear here. Keep your
             weekly availability up to date.
@@ -162,7 +160,9 @@ function BookingScreen({
   commit,
   onBack,
 }: ConsumerProps & { onBack?: () => void }) {
-  const [pickup, setPickup] = useState(state.anchors[0]?.id ?? ''),
+  const [pickup, setPickup] = useState(
+      state.anchors.find((a) => a.active)?.id ?? '',
+    ),
     [dropoff, setDropoff] = useState(''),
     [at, setAt] = useState(() => {
       const d = new Date(Date.now() + 60 * 60000);
@@ -425,8 +425,16 @@ export function TripScreen({
   commitRef.current = commit;
   const simulationPoint = useRef(0);
   const tick = useRef(0);
-  const d = state.drivers.find((d) => d.id === ride.driverId),
-    f = state.families.find((f) => f.id === ride.familyId),
+  const d = ride.driverId
+      ? {
+          ...state.drivers.find((d) => d.id === ride.driverId),
+          ...ride.driverSnapshot,
+        }
+      : undefined,
+    f = {
+      ...state.families.find((f) => f.id === ride.familyId),
+      ...ride.familySnapshot,
+    },
     pickup =
       ride.pickupSnapshot ?? state.anchors.find((a) => a.id === ride.pickupId),
     dropoff =
@@ -681,7 +689,11 @@ export function TripScreen({
           {d ? (
             <div className="driver-identity">
               <div className="driver-person">
-                <Avatar name={isDriver ? (f?.student ?? 'Student') : d.name} />
+                <Avatar
+                  name={
+                    isDriver ? (f?.student ?? 'Student') : (d.name ?? 'Driver')
+                  }
+                />
                 <div>
                   <strong>{isDriver ? f?.student : d.name}</strong>
                   <span>

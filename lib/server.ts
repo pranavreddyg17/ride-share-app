@@ -3,8 +3,10 @@ import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { sampleData } from './seed';
 import { notificationStatements } from './notifications';
 import { approvedMinutes } from './service-hours';
+import { traceIdentity, traceId } from './api-log';
 import {
   DEFAULT_SLOTS,
+  dateKey,
   type Role,
   type State,
   type Driver,
@@ -33,6 +35,12 @@ export const db = () => {
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 export type Context = {
+  userId: string;
+  grantId: string;
+  requestId: string;
+  action?: string;
+  entityKind?: string;
+  entityId?: string;
   writes: D1PreparedStatement[];
   after: D1PreparedStatement[];
   workspace: string;
@@ -45,7 +53,16 @@ export type Context = {
 export async function context(req: Request): Promise<Context> {
   const user = await getChatGPTUser();
   if (!user) throw new ApiError(401, 'Sign in to access your pilot workspace.');
-  const demo = new URL(req.url).searchParams.get('mode') === 'practice';
+  const mode = new URL(req.url).searchParams.get('mode');
+  if (mode && !['practice', 'pilot'].includes(mode))
+    throw new ApiError(400, 'Unknown workspace mode.');
+  const demo = mode === 'practice';
+  traceIdentity(req, {
+    workspace: demo ? 'practice:' + user.userId : 'pilot',
+    actorId: user.userId,
+    actorEmail: user.email,
+    actorRole: null,
+  });
   if (demo) {
     const workspace = 'practice:' + user.userId;
     await initialize(workspace, true);
@@ -56,7 +73,16 @@ export async function context(req: Request): Promise<Context> {
         : requested === 'family'
           ? 'family'
           : 'admin';
+    traceIdentity(req, {
+      workspace,
+      actorId: user.userId,
+      actorEmail: user.email,
+      actorRole: role,
+    });
     return {
+      userId: user.userId,
+      grantId: workspace,
+      requestId: traceId(req),
       workspace,
       demo,
       writes: [],
@@ -76,16 +102,22 @@ export async function context(req: Request): Promise<Context> {
   // Only the configured owner may initialize access, regardless of site audience.
   const owner = env.KY_BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
   if (owner && user.email.toLowerCase() === owner) {
-    await db()
-      .prepare(
-        "INSERT OR IGNORE INTO members (email,user_id,role,record_id,name) SELECT ?,?,'admin',NULL,? WHERE NOT EXISTS (SELECT 1 FROM members)",
-      )
-      .bind(owner, user.userId, user.fullName ?? user.email)
-      .run();
+    await db().batch([
+      db()
+        .prepare(
+          "INSERT OR IGNORE INTO members (email,user_id,role,record_id,name,grant_id) SELECT ?,?,'admin',NULL,?,? WHERE NOT EXISTS (SELECT 1 FROM members)",
+        )
+        .bind(owner, user.userId, user.fullName ?? user.email, uid()),
+      db()
+        .prepare(
+          "INSERT INTO events (workspace,id,kind,message,created_at,actor_id,actor_email,actor_role,action,request_id,entity_kind,entity_id) SELECT 'pilot',?,'access','Initial coordinator access created.',?,?,?,'admin','member.bootstrap',?,'members',? WHERE changes()=1",
+        )
+        .bind(uid(), now(), user.userId, owner, traceId(req), owner),
+    ]);
   }
   const member = await db()
     .prepare(
-      'SELECT email,user_id,role,record_id,name FROM members WHERE email=?',
+      'SELECT email,user_id,role,record_id,name,grant_id FROM members WHERE email=?',
     )
     .bind(user.email.toLowerCase())
     .first<{
@@ -94,6 +126,7 @@ export async function context(req: Request): Promise<Context> {
       role: Role;
       record_id: string | null;
       name: string;
+      grant_id: string;
     }>();
   if (!member)
     throw new ApiError(
@@ -104,12 +137,37 @@ export async function context(req: Request): Promise<Context> {
     throw new ApiError(403, 'This account needs coordinator review.');
   const bound = await db()
     .prepare(
-      'UPDATE members SET user_id=? WHERE email=? AND (user_id IS NULL OR user_id=?) RETURNING user_id',
+      'UPDATE members SET user_id=? WHERE email=? AND grant_id=? AND (user_id IS NULL OR user_id=?) RETURNING user_id',
     )
-    .bind(user.userId, member.email, user.userId)
+    .bind(user.userId, member.email, member.grant_id, user.userId)
     .first();
   if (!bound) throw new ApiError(403, 'This account needs coordinator review.');
+  if (
+    !member.grant_id ||
+    !['admin', 'driver', 'family'].includes(member.role) ||
+    (member.role === 'admin' ? member.record_id !== null : !member.record_id)
+  )
+    throw new ApiError(403, 'This account needs coordinator review.');
+  if (member.role !== 'admin') {
+    const linked = await db()
+      .prepare(
+        "SELECT id FROM records WHERE workspace='pilot' AND kind=? AND id=?",
+      )
+      .bind(member.role === 'driver' ? 'drivers' : 'families', member.record_id)
+      .first();
+    if (!linked)
+      throw new ApiError(403, 'This account needs coordinator review.');
+  }
+  traceIdentity(req, {
+    workspace: 'pilot',
+    actorId: user.userId,
+    actorEmail: member.email,
+    actorRole: member.role,
+  });
   return {
+    userId: user.userId,
+    grantId: member.grant_id,
+    requestId: traceId(req),
     workspace: 'pilot',
     writes: [],
     after: [],
@@ -161,10 +219,15 @@ async function initialize(workspace: string, demo: boolean) {
 }
 export async function list<T>(c: Context, kind: string): Promise<T[]> {
   const result = await db()
-    .prepare('SELECT data FROM records WHERE workspace=? AND kind=?')
+    .prepare('SELECT data,version FROM records WHERE workspace=? AND kind=?')
     .bind(c.workspace, kind)
-    .all<{ data: string }>();
-  return result.results.map((r) => JSON.parse(r.data));
+    .all<{ data: string; version: number }>();
+  return result.results.map((r) => ({
+    ...JSON.parse(r.data),
+    ...(['drivers', 'families', 'anchors'].includes(kind)
+      ? { version: r.version }
+      : {}),
+  }));
 }
 export async function record<T>(c: Context, kind: string, id: string) {
   const row = await db()
@@ -214,6 +277,44 @@ const phone = (v: unknown, optional = false) => {
   return p;
 };
 const bool = (v: unknown) => v === true;
+function details(v: unknown): Record<string, unknown> {
+  if (!v || typeof v !== 'object' || Array.isArray(v))
+    throw new ApiError(400, 'Record details must be a JSON object.');
+  return v as Record<string, unknown>;
+}
+function checkVersion(
+  body: Record<string, unknown>,
+  old: { version: number } | null,
+) {
+  if (!old) return;
+  if (!Number.isInteger(body.version))
+    throw new ApiError(
+      400,
+      'A record version is required. Close and reopen this form.',
+    );
+  if (body.version !== old.version)
+    throw new ApiError(
+      409,
+      'This record changed. Close and reopen the form before saving.',
+    );
+}
+function driverSnapshot(d: Driver): NonNullable<Ride['driverSnapshot']> {
+  return {
+    id: d.id,
+    name: d.name,
+    school: d.school,
+    vehicle: d.vehicle,
+    plate: d.plate,
+  };
+}
+function familySnapshot(f: Family): NonNullable<Ride['familySnapshot']> {
+  return {
+    id: f.id,
+    student: f.student,
+    guardian: f.guardian,
+    school: f.school,
+  };
+}
 function day(v: unknown) {
   const s = txt(v, 10, 10);
   if (
@@ -236,8 +337,8 @@ function driverReady(d: Driver, at = now()) {
     !d.insuranceChecked ||
     !d.guardianConsent ||
     !d.screeningChecked ||
-    d.licenseExpiry < at.slice(0, 10) ||
-    d.insuranceExpiry < at.slice(0, 10)
+    d.licenseExpiry < dateKey(at) ||
+    d.insuranceExpiry < dateKey(at)
   )
     throw new ApiError(
       409,
@@ -278,9 +379,23 @@ async function audit(
 ) {
   const statement = db()
     .prepare(
-      'INSERT INTO events (workspace,id,ride_id,kind,message,created_at) VALUES (?,?,?,?,?,?)',
+      'INSERT INTO events (workspace,id,ride_id,kind,message,created_at,actor_id,actor_email,actor_role,action,request_id,entity_kind,entity_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
     )
-    .bind(c.workspace, uid(), rideId, kind, message, now());
+    .bind(
+      c.workspace,
+      uid(),
+      rideId,
+      kind,
+      message,
+      now(),
+      c.userId,
+      c.email,
+      c.role,
+      c.action ?? null,
+      c.requestId,
+      c.entityKind ?? (rideId ? 'rides' : null),
+      c.entityId ?? rideId,
+    );
   (c.writes.length ? c.after : c.writes).push(statement);
   if (rideId && !c.demo && ['ride', 'sos'].includes(kind))
     c.after.push(...notificationStatements(c.workspace, rideId, kind));
@@ -294,6 +409,8 @@ async function save(
   guard = '',
   guardValues: unknown[] = [],
 ) {
+  c.entityKind = kind;
+  c.entityId = id;
   if (kind === 'rides' && !c.demo) {
     data = {
       ...(data as Ride),
@@ -350,6 +467,12 @@ async function saveRide(c: Context, r: Ride, version: number | null) {
       );
       driverReady(d, r.scheduledAt);
       driverReady(d);
+      if (
+        r.status === 'pending' ||
+        r.status === 'accepted' ||
+        (r.status === 'arrived' && !r.startedAt)
+      )
+        r.driverSnapshot = driverSnapshot(d);
       if (['pending', 'accepted'].includes(r.status))
         inAvailability(d, r.scheduledAt);
       guards.push(
@@ -393,40 +516,62 @@ async function saveRide(c: Context, r: Ride, version: number | null) {
   );
 }
 export async function state(c: Context): Promise<State> {
-  const credits = await list<ServiceCredit>(c, 'credits');
-  const [drivers, families, rides, anchors, eventResult, ws, memberResult] =
-    await Promise.all([
-      list<Driver>(c, 'drivers'),
-      list<Family>(c, 'families'),
-      list<Ride>(c, 'rides'),
-      list<Anchor>(c, 'anchors'),
-      db()
-        .prepare(
-          "SELECT id,ride_id,kind,message,created_at,resolved,note FROM events WHERE workspace=? AND (id IN (SELECT id FROM events WHERE workspace=? ORDER BY created_at DESC LIMIT 100) OR (kind='sos' AND resolved=0)) ORDER BY created_at DESC",
-        )
-        .bind(c.workspace, c.workspace)
-        .all<{
-          id: string;
-          ride_id: string | null;
-          kind: string;
-          message: string;
-          created_at: string;
-          resolved: number;
-          note: string;
-        }>(),
-      db()
-        .prepare('SELECT settings FROM workspaces WHERE id=?')
-        .bind(c.workspace)
-        .first<{ settings: string }>(),
-      c.role === 'admin' && !c.demo
-        ? db().prepare('SELECT email,role,record_id,name FROM members').all<{
-            email: string;
-            role: Role;
-            record_id: string | null;
-            name: string;
-          }>()
-        : Promise.resolve({ results: [] }),
-    ]);
+  // Read related records together so a report cannot mix old credits with new rides.
+  const rows = await db()
+    .prepare(
+      "SELECT kind,data,version FROM records WHERE workspace=? AND kind IN ('drivers','families','rides','anchors','credits')",
+    )
+    .bind(c.workspace)
+    .all<{ kind: string; data: string; version: number }>();
+  const records = <T>(kind: string): T[] =>
+    rows.results
+      .filter((r) => r.kind === kind)
+      .map((r) => ({
+        ...JSON.parse(r.data),
+        ...(['drivers', 'families', 'anchors'].includes(kind)
+          ? { version: r.version }
+          : {}),
+      }));
+  const credits = records<ServiceCredit>('credits');
+  const drivers = records<Driver>('drivers'),
+    families = records<Family>('families'),
+    rides = records<Ride>('rides'),
+    anchors = records<Anchor>('anchors');
+  const [eventResult, ws, memberResult] = await Promise.all([
+    db()
+      .prepare(
+        "SELECT * FROM events WHERE workspace=? AND (id IN (SELECT id FROM events WHERE workspace=? ORDER BY created_at DESC LIMIT 100) OR (kind='sos' AND resolved=0)) ORDER BY created_at DESC",
+      )
+      .bind(c.workspace, c.workspace)
+      .all<{
+        id: string;
+        ride_id: string | null;
+        kind: string;
+        message: string;
+        created_at: string;
+        resolved: number;
+        note: string;
+        actor_id: string | null;
+        actor_email: string | null;
+        actor_role: string | null;
+        action: string | null;
+        request_id: string | null;
+        entity_kind: string | null;
+        entity_id: string | null;
+      }>(),
+    db()
+      .prepare('SELECT settings FROM workspaces WHERE id=?')
+      .bind(c.workspace)
+      .first<{ settings: string }>(),
+    c.role === 'admin' && !c.demo
+      ? db().prepare('SELECT email,role,record_id,name FROM members').all<{
+          email: string;
+          role: Role;
+          record_id: string | null;
+          name: string;
+        }>()
+      : Promise.resolve({ results: [] }),
+  ]);
   const locations = await db()
     .prepare('SELECT * FROM ride_locations WHERE workspace=?')
     .bind(c.workspace)
@@ -535,6 +680,17 @@ export async function state(c: Context): Promise<State> {
         createdAt: e.created_at,
         resolved: !!e.resolved,
         note: e.note,
+        ...(c.role === 'admin'
+          ? {
+              actorId: e.actor_id,
+              actorEmail: e.actor_email,
+              actorRole: e.actor_role,
+              action: e.action,
+              requestId: e.request_id,
+              entityKind: e.entity_kind,
+              entityId: e.entity_id,
+            }
+          : {}),
       })),
     members: memberResult.results.map((m) => ({
       email: m.email,
@@ -550,15 +706,18 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
   const op = txt(body.op, 1, 30);
   if (op === 'driver.save') {
     requireRole(c, 'admin', 'driver');
-    const input = body.data as Record<string, unknown>;
-    if (!input || typeof input !== 'object')
-      throw new ApiError(400, 'Driver details are required.');
+    const input = details(body.data);
     const id = body.id ? txt(body.id) : uid();
     if (c.role === 'driver' && id !== c.recordId)
       throw new ApiError(403, 'You can update only your own profile.');
     const old = body.id ? await record<Driver>(c, 'drivers', id) : null;
+    checkVersion(body, old);
     const dob = day(input.dob);
-    const age = (Date.now() - Date.parse(dob)) / (365.25 * 86400000);
+    const today = dateKey(now());
+    const age =
+      Number(today.slice(0, 4)) -
+      Number(dob.slice(0, 4)) -
+      (today.slice(5) < dob.slice(5) ? 1 : 0);
     if (age < 16 || age > 100)
       throw new ApiError(
         400,
@@ -577,20 +736,62 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       licenseExpiry: day(input.licenseExpiry),
       insuranceExpiry: day(input.insuranceExpiry),
       status: old?.data.status ?? 'review',
-      licenseChecked: c.role === 'admin' ? bool(input.licenseChecked) : false,
+      licenseChecked:
+        c.role === 'admin'
+          ? bool(input.licenseChecked)
+          : (old?.data.licenseChecked ?? false),
       insuranceChecked:
-        c.role === 'admin' ? bool(input.insuranceChecked) : false,
-      guardianConsent: c.role === 'admin' ? bool(input.guardianConsent) : false,
+        c.role === 'admin'
+          ? bool(input.insuranceChecked)
+          : (old?.data.insuranceChecked ?? false),
+      guardianConsent:
+        c.role === 'admin'
+          ? bool(input.guardianConsent)
+          : (old?.data.guardianConsent ?? false),
       screeningChecked:
-        c.role === 'admin' ? bool(input.screeningChecked) : false,
-      notes: txt(input.notes ?? '', 0, 1000),
+        c.role === 'admin'
+          ? bool(input.screeningChecked)
+          : (old?.data.screeningChecked ?? false),
+      notes:
+        c.role === 'admin'
+          ? txt(input.notes ?? '', 0, 1000)
+          : (old?.data.notes ?? ''),
       availability: old?.data.availability ?? DEFAULT_SLOTS,
       createdAt: old?.data.createdAt ?? now(),
       hours: 0,
       rides: 0,
       rating: 0,
     };
-    if (c.role === 'driver') d.status = 'review';
+    const eligibilityChanged =
+      old &&
+      (
+        [
+          'name',
+          'dob',
+          'vehicle',
+          'plate',
+          'licenseExpiry',
+          'insuranceExpiry',
+        ] as const
+      ).some((key) => d[key] !== old.data[key]);
+    if (eligibilityChanged) {
+      if (d.status !== 'suspended') d.status = 'review';
+      d.licenseChecked = false;
+      d.insuranceChecked = false;
+      d.guardianConsent = false;
+      d.screeningChecked = false;
+    }
+    const duplicate = await db()
+      .prepare(
+        "SELECT id FROM records WHERE workspace=? AND kind='drivers' AND id<>? AND lower(json_extract(data,'$.email'))=?",
+      )
+      .bind(c.workspace, id, d.email)
+      .first();
+    if (duplicate)
+      throw new ApiError(
+        409,
+        'A driver with this contact email is already registered. Update the existing record.',
+      );
     if (d.status === 'approved') {
       try {
         driverReady(d);
@@ -612,10 +813,16 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       id,
       d,
       old?.version ?? null,
-      d.status === 'approved'
-        ? ''
-        : "NOT EXISTS (SELECT 1 FROM records r WHERE r.workspace=? AND r.kind='rides' AND json_extract(r.data,'$.driverId')=? AND json_extract(r.data,'$.status') IN ('arrived','in_progress'))",
-      d.status === 'approved' ? [] : [c.workspace, id],
+      "NOT EXISTS (SELECT 1 FROM records d WHERE d.workspace=? AND d.kind='drivers' AND d.id<>? AND lower(json_extract(d.data,'$.email'))=?)" +
+        (d.status === 'approved'
+          ? ''
+          : " AND NOT EXISTS (SELECT 1 FROM records r WHERE r.workspace=? AND r.kind='rides' AND json_extract(r.data,'$.driverId')=? AND json_extract(r.data,'$.status') IN ('arrived','in_progress'))"),
+      [
+        c.workspace,
+        id,
+        d.email,
+        ...(d.status === 'approved' ? [] : [c.workspace, id]),
+      ],
     );
     await audit(
       c,
@@ -623,9 +830,11 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       'driver',
     );
     return {
-      message: old
-        ? 'Driver profile saved.'
-        : 'Driver added to the review queue.',
+      message: eligibilityChanged
+        ? 'Driver details saved. Eligibility changed; screening and approval must be reviewed again.'
+        : old
+          ? 'Driver profile saved.'
+          : 'Driver added to the review queue.',
     };
   }
   if (op === 'driver.status') {
@@ -635,6 +844,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       'drivers',
       txt(body.id),
     );
+    checkVersion(body, { version });
     const status = txt(body.status);
     if (!['approved', 'review', 'suspended'].includes(status))
       throw new ApiError(400, 'Invalid driver status.');
@@ -668,12 +878,12 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
   }
   if (op === 'family.save') {
     requireRole(c, 'admin', 'family');
-    const input = body.data as Record<string, unknown>;
-    if (!input) throw new ApiError(400, 'Family details are required.');
+    const input = details(body.data);
     const id = body.id ? txt(body.id) : uid();
     if (c.role === 'family' && id !== c.recordId)
       throw new ApiError(403, 'You can update only your own family.');
     const old = body.id ? await record<Family>(c, 'families', id) : null;
+    checkVersion(body, old);
     const f: Family = {
       id,
       guardian: txt(input.guardian, 2, 100),
@@ -718,10 +928,10 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
   }
   if (op === 'anchor.save') {
     requireRole(c, 'admin');
-    const input = body.data as Record<string, unknown>;
-    if (!input) throw new ApiError(400, 'Location details are required.');
+    const input = details(body.data);
     const id = body.id ? txt(body.id) : uid();
     const old = body.id ? await record<Anchor>(c, 'anchors', id) : null;
+    checkVersion(body, old);
     const a: Anchor = {
       id,
       name: txt(input.name, 2, 100),
@@ -730,7 +940,10 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       lng: number(input.lng, -180, 180),
       category: txt(input.category, 2, 50),
       notes: txt(input.notes ?? '', 0, 500),
-      active: true,
+      active:
+        input.active === undefined
+          ? (old?.data.active ?? true)
+          : bool(input.active),
     };
     await save(c, 'anchors', id, a, old?.version ?? null);
     await audit(c, `${c.name} saved anchor location ${a.name}.`);
@@ -744,6 +957,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       c.recordId!,
     );
     driverReady(d);
+    checkVersion(body, { version });
     const workspaceVersion = await db()
       .prepare('SELECT revision FROM workspaces WHERE id=?')
       .bind(c.workspace)
@@ -783,7 +997,10 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       [c.workspace, workspaceVersion!.revision],
     );
     await audit(c, `${c.name} updated driver availability.`, 'driver');
-    return { message: 'Your weekly availability is saved.' };
+    return {
+      message: 'Your weekly availability is saved.',
+      version: version + 1,
+    };
   }
   if (op === 'ride.create') {
     requireRole(c, 'admin', 'family');
@@ -807,7 +1024,15 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
     );
     if (!pickupSnapshot.active || !dropoffSnapshot.active)
       throw new ApiError(409, 'Choose active pickup locations.');
-    const ts = Date.parse(txt(body.scheduledAt));
+    const scheduledAt = txt(body.scheduledAt);
+    day(scheduledAt.slice(0, 10));
+    if (
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(
+        scheduledAt,
+      )
+    )
+      throw new ApiError(400, 'Pickup time must include its timezone.');
+    const ts = Date.parse(scheduledAt);
     if (
       !Number.isFinite(ts) ||
       ts < Date.now() + 29 * 60000 ||
@@ -817,6 +1042,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
     const r: Ride = {
       id: 'KY-' + uid().slice(0, 8).toUpperCase(),
       familyId,
+      familySnapshot: familySnapshot(f),
       driverId: c.role === 'admin' && body.driverId ? txt(body.driverId) : null,
       pickupId,
       dropoffId,
@@ -878,6 +1104,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         throw new ApiError(409, 'Only unstarted requests can be declined.');
       const reason = txt(body.reason, 4, 500);
       r.driverId = null;
+      r.driverSnapshot = null;
       r.acceptedAt = null;
       r.status = 'pending';
       clearLocation(c, r);
@@ -1147,7 +1374,18 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
   }
   if (op === 'event.resolve') {
     requireRole(c, 'admin');
+    c.entityKind = 'events';
+    c.entityId = txt(body.id);
     const note = txt(body.note, 4, 500);
+    const alert = await db()
+      .prepare(
+        "SELECT ride_id,resolved FROM events WHERE workspace=? AND id=? AND kind='sos'",
+      )
+      .bind(c.workspace, c.entityId)
+      .first<{ ride_id: string | null; resolved: number }>();
+    if (!alert) throw new ApiError(404, 'Help request not found.');
+    if (alert.resolved)
+      throw new ApiError(409, 'This help request is already resolved.');
     c.writes.push(
       db()
         .prepare(
@@ -1159,11 +1397,14 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       c,
       `${c.name} resolved help request ${txt(body.id)}: ${note}`,
       'safety',
+      alert.ride_id ?? undefined,
     );
     return { message: 'Help request resolved.' };
   }
   if (op === 'settings') {
     requireRole(c, 'admin');
+    c.entityKind = 'workspaces';
+    c.entityId = c.workspace;
     const s: Settings = {
       coordinator: txt(body.coordinator, 2, 100),
       contactPhone: phone(body.contactPhone, true),
@@ -1186,18 +1427,29 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         'Manage account access in the real pilot workspace.',
       );
     const e = email(body.email);
+    c.entityKind = 'members';
+    c.entityId = e;
     if (e === c.email)
       throw new ApiError(
         409,
         'You cannot remove your own coordinator account.',
       );
     const reason = txt(body.reason, 4, 500);
-    if (e === env.KY_BOOTSTRAP_ADMIN_EMAIL?.toLowerCase())
+    if (e === env.KY_BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase())
       throw new ApiError(
         409,
         'The initial owner account cannot be revoked here.',
       );
-    c.writes.push(db().prepare('DELETE FROM members WHERE email=?').bind(e));
+    const target = await db()
+      .prepare('SELECT grant_id FROM members WHERE email=?')
+      .bind(e)
+      .first<{ grant_id: string }>();
+    if (!target) throw new ApiError(404, 'This account no longer has access.');
+    c.writes.push(
+      db()
+        .prepare('DELETE FROM members WHERE email=? AND grant_id=?')
+        .bind(e, target.grant_id),
+    );
     await audit(
       c,
       `${c.name} revoked pilot access for ${e}: ${reason}`,
@@ -1216,6 +1468,8 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
         'Account access is managed in the real pilot workspace.',
       );
     const e = email(body.email);
+    c.entityKind = 'members';
+    c.entityId = e;
     const role = txt(body.role);
     if (!['admin', 'driver', 'family'].includes(role))
       throw new ApiError(400, 'Choose a valid role.');
@@ -1224,6 +1478,19 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       recordId = txt(body.recordId);
       await record(c, role === 'driver' ? 'drivers' : 'families', recordId);
     }
+    if (
+      role === 'driver' &&
+      (await db()
+        .prepare(
+          "SELECT email FROM members WHERE role='driver' AND record_id=?",
+        )
+        .bind(recordId)
+        .first())
+    )
+      throw new ApiError(
+        409,
+        'This driver already has a sign-in account. Revoke the old account before linking a replacement.',
+      );
     const exists = await db()
       .prepare('SELECT email FROM members WHERE email=?')
       .bind(e)
@@ -1232,9 +1499,9 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
     c.writes.push(
       db()
         .prepare(
-          'INSERT OR IGNORE INTO members (email,role,record_id,name) VALUES (?,?,?,?)',
+          "INSERT OR IGNORE INTO members (email,role,record_id,name,grant_id) SELECT ?,?,?,?,? WHERE ?<>'driver' OR NOT EXISTS (SELECT 1 FROM members WHERE role='driver' AND record_id=?)",
         )
-        .bind(e, role, recordId, txt(body.name, 2, 100)),
+        .bind(e, role, recordId, txt(body.name, 2, 100), uid(), role, recordId),
     );
     await audit(c, `${c.name} granted ${role} access to ${e}.`, 'access');
     return {

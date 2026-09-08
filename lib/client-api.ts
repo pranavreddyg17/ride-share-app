@@ -22,6 +22,7 @@ export async function postMutation(
       const result = (await res.json()) as {
         message: string;
         id?: string;
+        version?: number;
         error?: string;
       };
       if (res.status >= 500 && attempt < 2) {
@@ -32,7 +33,10 @@ export async function postMutation(
       }
       if (!res.ok)
         throw new MutationError(
-          result.error ?? 'The change could not be saved.',
+          (result.error ?? 'The change could not be saved.') +
+            (res.headers.get('X-Request-Id')
+              ? ` Request: ${res.headers.get('X-Request-Id')}`
+              : ''),
           res.status,
         );
       return result;

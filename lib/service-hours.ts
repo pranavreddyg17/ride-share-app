@@ -58,8 +58,10 @@ export function filterRides(state: State, filters: ReportFilters) {
     .filter((r) => {
       const date = day.format(new Date(r.scheduledAt));
       const credit = state.credits.find((c) => c.rideId === r.id);
-      const driver = state.drivers.find((d) => d.id === r.driverId);
-      const family = state.families.find((f) => f.id === r.familyId);
+      const driver =
+        r.driverSnapshot ?? state.drivers.find((d) => d.id === r.driverId);
+      const family =
+        r.familySnapshot ?? state.families.find((f) => f.id === r.familyId);
       return (
         (!filters.from || date >= filters.from) &&
         (!filters.to || date <= filters.to) &&

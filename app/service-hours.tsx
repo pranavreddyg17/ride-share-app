@@ -141,6 +141,12 @@ export function RideFacts({ ride }: { ride: Ride }) {
         <h2>Trip record</h2>
         <span>Central Time</span>
       </div>
+      {(!ride.familySnapshot || (ride.driverId && !ride.driverSnapshot)) && (
+        <p className="ledger-note">
+          Legacy record: participant details were not captured with this ride.
+          Names may come from the current register.
+        </p>
+      )}
       <div className="record-timeline">
         {[
           { label: 'Requested', at: ride.createdAt },
@@ -283,8 +289,9 @@ function CreditDialog({
             {credit ? 'Amend service credit' : 'Review service credit'}
           </DialogTitle>
           <DialogDescription>
-            {state.drivers.find((d) => d.id === ride.driverId)?.name} ·{' '}
-            {ride.id}
+            {ride.driverSnapshot?.name ??
+              state.drivers.find((d) => d.id === ride.driverId)?.name}{' '}
+            · {ride.id}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit}>
@@ -464,8 +471,10 @@ export function ServiceHours({
                   </TableCell>
                   {state.role === 'admin' && (
                     <TableCell>
-                      {state.drivers.find((d) => d.id === ride.driverId)
-                        ?.name ?? 'Unassigned'}
+                      {ride.driverSnapshot?.name ??
+                        state.drivers.find((d) => d.id === ride.driverId)
+                          ?.name ??
+                        'Unassigned'}
                     </TableCell>
                   )}
                   <TableCell className="mono">
@@ -632,10 +641,9 @@ export function RideLedger({ state, open, navigate }: ViewProps) {
                   </TableCell>
                   <TableCell>
                     <strong>
-                      {
+                      {ride.familySnapshot?.student ??
                         state.families.find((f) => f.id === ride.familyId)
-                          ?.student
-                      }
+                          ?.student}
                     </strong>
                     <small>
                       {ride.pickupSnapshot?.name ??
@@ -647,7 +655,8 @@ export function RideLedger({ state, open, navigate }: ViewProps) {
                     </small>
                   </TableCell>
                   <TableCell>
-                    {state.drivers.find((d) => d.id === ride.driverId)?.name ??
+                    {ride.driverSnapshot?.name ??
+                      state.drivers.find((d) => d.id === ride.driverId)?.name ??
                       'Unassigned'}
                   </TableCell>
                   <TableCell>

@@ -14,6 +14,7 @@ export interface Slot {
   end: string;
 }
 export interface Driver {
+  version?: number;
   id: string;
   name: string;
   email: string;
@@ -39,6 +40,7 @@ export interface Driver {
   rating: number;
 }
 export interface Family {
+  version?: number;
   id: string;
   guardian: string;
   email: string;
@@ -52,6 +54,7 @@ export interface Family {
   createdAt: string;
 }
 export interface Anchor {
+  version?: number;
   id: string;
   name: string;
   address: string;
@@ -65,6 +68,11 @@ export interface Ride {
   id: string;
   familyId: string;
   driverId: string | null;
+  driverSnapshot?: Pick<
+    Driver,
+    'id' | 'name' | 'school' | 'vehicle' | 'plate'
+  > | null;
+  familySnapshot?: Pick<Family, 'id' | 'student' | 'guardian' | 'school'>;
   pickupId: string;
   dropoffId: string;
   scheduledAt: string;
@@ -94,6 +102,13 @@ export interface Ride {
   cancelReason: string;
 }
 export interface Activity {
+  actorId?: string | null;
+  actorEmail?: string | null;
+  actorRole?: string | null;
+  action?: string | null;
+  requestId?: string | null;
+  entityKind?: string | null;
+  entityId?: string | null;
   id: string;
   rideId: string | null;
   message: string;

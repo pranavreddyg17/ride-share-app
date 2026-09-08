@@ -39,7 +39,7 @@ export type Modal =
   | { kind: 'tour' };
 export type Commit = (
   body: Record<string, unknown>,
-) => Promise<{ message: string; id?: string }>;
+) => Promise<{ message: string; id?: string; version?: number }>;
 const blankDriver: Driver = {
   id: '',
   name: '',
@@ -116,8 +116,12 @@ export function AppDialog({
       : (state.families[0]?.id ?? ''),
   );
   const [driverId, setDriverId] = useState(''),
-    [pickup, setPickup] = useState(state.anchors[0]?.id ?? ''),
-    [dropoff, setDropoff] = useState(state.anchors[1]?.id ?? '');
+    [pickup, setPickup] = useState(
+      state.anchors.filter((a) => a.active)[0]?.id ?? '',
+    ),
+    [dropoff, setDropoff] = useState(
+      state.anchors.filter((a) => a.active)[1]?.id ?? '',
+    );
   const [at, setAt] = useState(() => {
     const d = new Date(Date.now() + 3600000);
     d.setSeconds(0, 0);
@@ -188,6 +192,7 @@ export function AppDialog({
           payload = {
             op: 'driver.save',
             id: driver.id || undefined,
+            version: driver.version,
             data: driver,
           };
           break;
@@ -195,6 +200,7 @@ export function AppDialog({
           payload = {
             op: 'family.save',
             id: family.id || undefined,
+            version: family.version,
             data: family,
           };
           break;
@@ -202,6 +208,7 @@ export function AppDialog({
           payload = {
             op: 'anchor.save',
             id: anchor.id || undefined,
+            version: anchor.version,
             data: anchor,
           };
           break;
@@ -221,6 +228,7 @@ export function AppDialog({
           payload = {
             op: 'driver.status',
             id: modal.driver.id,
+            version: modal.driver.version,
             status: modal.status,
             reason,
           };
@@ -360,7 +368,9 @@ export function AppDialog({
               value={pickup}
               onChange={setPickup}
               label="Pickup"
-              items={state.anchors.map((a) => ({ value: a.id, label: a.name }))}
+              items={state.anchors
+                .filter((a) => a.active)
+                .map((a) => ({ value: a.id, label: a.name }))}
             />
           </Field>
           <Field label="Destination">
@@ -368,7 +378,9 @@ export function AppDialog({
               value={dropoff}
               onChange={setDropoff}
               label="Destination"
-              items={state.anchors.map((a) => ({ value: a.id, label: a.name }))}
+              items={state.anchors
+                .filter((a) => a.active)
+                .map((a) => ({ value: a.id, label: a.name }))}
             />
           </Field>
           <Field label="Activity">
@@ -395,12 +407,6 @@ export function AppDialog({
               />
             </Field>
           )}
-          <Check
-            checked={driver.smsConsent === true}
-            onChange={(v) => setDriver({ ...driver, smsConsent: v })}
-            label="This driver agreed to receive operational text alerts at this number."
-            hint="Only enable after you have recorded their communication consent."
-          />
           <Field label="Pickup notes (optional)">
             <textarea
               maxLength={500}
@@ -425,6 +431,15 @@ export function AppDialog({
             {dField('phone', 'Phone', 'tel', '+12145550123')}
           </div>
           {dField('school', 'School')}
+          <Check
+            checked={driver.smsConsent === true}
+            onChange={(v) => setDriver({ ...driver, smsConsent: v })}
+            label={
+              state.role === 'driver'
+                ? 'I agree to receive operational text alerts at my registered number.'
+                : 'This driver agreed to receive operational text alerts at their registered number.'
+            }
+          />
           <div className="fields-two">
             {dField('vehicle', 'Vehicle / color', 'text', 'White Honda Civic')}
             {dField('plate', 'License plate')}
@@ -443,18 +458,22 @@ export function AppDialog({
               ))}
             </div>
           )}
-          <Field label="Review notes (optional)">
-            <textarea
-              maxLength={1000}
-              value={driver.notes}
-              onChange={(e) => setDriver({ ...driver, notes: e.target.value })}
-              placeholder="Record verification dates and follow-up items. Do not paste license numbers."
-            />
-          </Field>
+          {state.role === 'admin' && (
+            <Field label="Review notes (optional)">
+              <textarea
+                maxLength={1000}
+                value={driver.notes}
+                onChange={(e) =>
+                  setDriver({ ...driver, notes: e.target.value })
+                }
+                placeholder="Record verification dates and follow-up items. Do not paste license numbers."
+              />
+            </Field>
+          )}
           <div className="notice warning">
             <Info />
             {state.role === 'driver'
-              ? 'Changes to your profile return it to coordinator review.'
+              ? 'Changing identity, vehicle, or document dates requires a new review. Contact and text-consent updates keep your current approval.'
               : 'Saving a profile does not approve it. Complete the review, then choose Approve from the register.'}
           </div>
         </>
@@ -565,6 +584,12 @@ export function AppDialog({
               onChange={(e) => setAnchor({ ...anchor, notes: e.target.value })}
             />
           </Field>
+          <Check
+            checked={anchor.active}
+            onChange={(active) => setAnchor({ ...anchor, active })}
+            label="Available for new ride requests"
+            hint="Existing rides retain their agreed meeting point."
+          />
         </>
       )}
       {modal.kind === 'assign' && (

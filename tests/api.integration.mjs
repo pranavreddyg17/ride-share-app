@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { creditChecks } from './credit-checks.mjs';
+import { endpointChecks } from './endpoint-checks.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 const base = process.env.KY_TEST_URL ?? 'http://127.0.0.1:3001';
@@ -8,7 +9,11 @@ if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname))
     'Integration tests are restricted to an isolated localhost Worker.',
   );
 const run = Date.now().toString(36);
-const persist = '../api-hardening-state';
+const persist = process.env.KY_TEST_STATE ?? '../api-hardening-state';
+if (!/(?:^|\/)\w[\w-]*-state$/.test(persist) || persist.includes('.wrangler'))
+  throw new Error(
+    'KY_TEST_STATE must name a dedicated *-state test directory.',
+  );
 function sql(command) {
   const output = execFileSync(
     process.execPath,
@@ -26,7 +31,14 @@ function sql(command) {
       command,
       '--json',
     ],
-    { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+    {
+      encoding: 'utf8',
+      maxBuffer: 4 * 1024 * 1024,
+      env: {
+        ...process.env,
+        MINIFLARE_REGISTRY_PATH: resolve(persist, 'sql-registry'),
+      },
+    },
   );
   return JSON.parse(output).flatMap((r) => r.results ?? []);
 }
@@ -77,7 +89,11 @@ async function req(user, path = '/api/state?mode=pilot', body, extra = {}) {
   } catch {
     json = { raw: text.slice(0, 200) };
   }
-  return { status: res.status, data: json };
+  return {
+    status: res.status,
+    data: json,
+    requestId: res.headers.get('X-Request-Id'),
+  };
 }
 function expect(result, status, label) {
   assert.equal(
@@ -91,8 +107,30 @@ function expect(result, status, label) {
 }
 const read = async (user) =>
   expect(await req(user), 200, 'authenticated state');
-const post = async (user, body, status = 200, label = body.op) =>
-  expect(await req(user, undefined, body), status, label);
+const post = async (user, body, status = 200, label = body.op) => {
+  // Ordinary workflow helpers submit the version currently shown to the caller.
+  // The endpoint audit submits explicit stale/missing versions independently.
+  if (
+    body.version === undefined &&
+    ((body.id &&
+      ['driver.save', 'driver.status', 'family.save', 'anchor.save'].includes(
+        body.op,
+      )) ||
+      body.op === 'availability')
+  ) {
+    const snapshot = await req(user);
+    const kind = body.op.startsWith('family')
+      ? 'families'
+      : body.op.startsWith('anchor')
+        ? 'anchors'
+        : 'drivers';
+    const record = snapshot.data[kind]?.find(
+      (r) => body.op === 'availability' || r.id === body.id,
+    );
+    body = { ...body, version: record?.version };
+  }
+  return expect(await req(user, undefined, body), status, label);
+};
 expect(await req(null), 401, 'anonymous request denied');
 expect(
   await req(stranger),
@@ -869,6 +907,21 @@ const additionalCreditChecks = await creditChecks({
   forbiddenRide: unassignedTestRide.id,
 });
 checks += additionalCreditChecks;
+const endpointAuditChecks = await endpointChecks({
+  base,
+  run,
+  req,
+  sql,
+  admin,
+  driverUser,
+  familyUser,
+  id,
+  driver,
+  family,
+  a,
+  b,
+});
+checks += endpointAuditChecks;
 const strangerPractice = expect(
   await req(stranger, '/api/state?mode=practice'),
   200,
@@ -979,6 +1032,7 @@ for (const page of [
   '/rides?mode=pilot',
   '/hours?mode=pilot',
   '/reports?mode=pilot',
+  '/audit?mode=pilot',
   `/rides/${id}?mode=pilot`,
 ]) {
   const res = await fetch(base + page, {

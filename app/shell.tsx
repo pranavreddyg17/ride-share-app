@@ -11,6 +11,7 @@ import {
   Settings2,
   ChevronRight,
   FileSpreadsheet,
+  ListFilter,
   GraduationCap,
   LogOut,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ export const sections = [
   { id: 'settings', label: 'Pilot settings', icon: Settings2 },
   { id: 'hours', label: 'Service hours', icon: GraduationCap },
   { id: 'reports', label: 'Reports & exports', icon: FileSpreadsheet },
+  { id: 'audit', label: 'Request logs', icon: ListFilter },
 ];
 export function Brand() {
   return (
@@ -105,6 +107,7 @@ function Navigation({
           sections[3],
           sections[4],
           sections[5],
+          sections[9],
           sections[6],
         ]
       : role === 'driver'

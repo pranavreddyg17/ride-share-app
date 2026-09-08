@@ -22,6 +22,7 @@ export const members = sqliteTable(
     role: text('role').notNull(),
     recordId: text('record_id'),
     name: text('name').notNull(),
+    grantId: text('grant_id').notNull().default(''),
   },
   (t) => [index('idx_members_user').on(t.userId)],
 );
@@ -51,10 +52,36 @@ export const events = sqliteTable(
     createdAt: text('created_at').notNull(),
     resolved: integer('resolved').notNull().default(0),
     note: text('note').notNull().default(''),
+    actorId: text('actor_id'),
+    actorEmail: text('actor_email'),
+    actorRole: text('actor_role'),
+    action: text('action'),
+    requestId: text('request_id'),
+    entityKind: text('entity_kind'),
+    entityId: text('entity_id'),
   },
   (t) => [
     primaryKey({ columns: [t.workspace, t.id] }),
     index('idx_events_workspace_time').on(t.workspace, t.createdAt),
+  ],
+);
+
+export const requestLogs = sqliteTable(
+  'request_logs',
+  {
+    id: text('id').primaryKey(),
+    workspace: text('workspace'),
+    createdAt: text('created_at').notNull(),
+    actorId: text('actor_id'),
+    actorEmail: text('actor_email'),
+    actorRole: text('actor_role'),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    status: integer('status').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+  },
+  (t) => [
+    index('idx_requests_workspace_time').on(t.workspace, t.createdAt, t.id),
   ],
 );
 

@@ -165,6 +165,9 @@ export async function reportWorkbook(
     { name: 'Driver ID', width: 38 },
     { name: 'Driver', width: 24 },
     { name: 'Driver school', width: 28 },
+    { name: 'Vehicle at assignment', width: 28 },
+    { name: 'Plate at assignment', width: 18 },
+    { name: 'Participant records', width: 34 },
     ...(admin
       ? [
           { name: 'Student', width: 23 },
@@ -204,8 +207,8 @@ export async function reportWorkbook(
     'Ride ledger',
     columns,
     rides.map((r) => {
-      const d = driver(r.driverId),
-        f = family(r.familyId),
+      const d = r.driverSnapshot ?? driver(r.driverId),
+        f = r.familySnapshot ?? family(r.familyId),
         c = credits.find((c) => c.rideId === r.id),
         t = rideTiming(r);
       return [
@@ -214,6 +217,11 @@ export async function reportWorkbook(
         r.driverId,
         d?.name ?? 'Unassigned',
         d?.school ?? '',
+        r.driverSnapshot?.vehicle ?? '',
+        r.driverSnapshot?.plate ?? '',
+        r.familySnapshot && (!r.driverId || r.driverSnapshot)
+          ? 'Recorded with ride'
+          : 'Legacy: current register fallback',
         ...(admin ? [f?.student ?? '', f?.guardian ?? ''] : []),
         r.activity,
         anchor(r, 'pickup')?.name ?? '',
@@ -255,19 +263,26 @@ export async function reportWorkbook(
       { name: 'Reviewer', width: 30 },
       { name: 'Reviewed at (CT)', width: 23, format: stamp },
       { name: 'Revision', width: 12 },
+      { name: 'Current decision', width: 18 },
       { name: 'Reason', width: 55 },
     ],
     history
       .filter((c) => ids.has(c.rideId))
       .map((c) => [
         c.rideId,
-        driver(c.driverId)?.name ?? c.driverId,
+        rides.find((r) => r.id === c.rideId)?.driverSnapshot?.name ??
+          driver(c.driverId)?.name ??
+          c.driverId,
         c.status,
         c.minutes,
         c.minutes / 60,
         c.reviewedBy,
         centralDate(c.reviewedAt),
         c.revision,
+        credits.some(
+          (current) =>
+            current.rideId === c.rideId && current.revision === c.revision,
+        ),
         c.reason,
       ]),
   );
@@ -282,6 +297,12 @@ export async function reportWorkbook(
         { name: 'Event', width: 75 },
         { name: 'Resolved', width: 14 },
         { name: 'Resolution note', width: 55 },
+        { name: 'Actor email', width: 34 },
+        { name: 'Actor role', width: 16 },
+        { name: 'Action', width: 22 },
+        { name: 'Record type', width: 18 },
+        { name: 'Record ID', width: 38 },
+        { name: 'Request ID', width: 38 },
       ],
       state.events
         .filter((e) => !!e.rideId && ids.has(e.rideId))
@@ -293,6 +314,12 @@ export async function reportWorkbook(
           e.message,
           e.resolved,
           e.note,
+          e.actorEmail ?? 'Legacy: actor not recorded',
+          e.actorRole ?? '',
+          e.action ?? '',
+          e.entityKind ?? '',
+          e.entityId ?? '',
+          e.requestId ?? '',
         ]),
     );
     sheet(

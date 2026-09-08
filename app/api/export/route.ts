@@ -1,7 +1,8 @@
+import { withApiLog, methodNotAllowed } from '@/lib/api-log';
 import { ApiError, context, requireRole, db } from '@/lib/server';
 import { rateLimit } from '@/lib/reliability';
 export const dynamic = 'force-dynamic';
-export async function GET(req: Request) {
+export const GET = withApiLog(async function GET(req: Request) {
   try {
     const c = await context(req);
     requireRole(c, 'admin');
@@ -54,7 +55,17 @@ export async function GET(req: Request) {
   } catch (e) {
     return Response.json(
       { error: e instanceof ApiError ? e.message : 'Export unavailable' },
-      { status: e instanceof ApiError ? e.status : 503 },
+      {
+        status: e instanceof ApiError ? e.status : 503,
+        headers: { 'Cache-Control': 'no-store' },
+      },
     );
   }
-}
+});
+
+const rejectMethod = methodNotAllowed(['GET', 'HEAD']);
+export const POST = rejectMethod;
+export const PUT = rejectMethod;
+export const PATCH = rejectMethod;
+export const DELETE = rejectMethod;
+export const OPTIONS = rejectMethod;

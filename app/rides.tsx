@@ -168,8 +168,16 @@ function RideDetail({
     [sharing, setSharing] = useState(false),
     [gpsError, setGpsError] = useState('');
   const lastPing = useRef(0);
-  const driver = state.drivers.find((d) => d.id === ride.driverId),
-    family = state.families.find((f) => f.id === ride.familyId),
+  const driver = ride.driverId
+      ? {
+          ...state.drivers.find((d) => d.id === ride.driverId),
+          ...ride.driverSnapshot,
+        }
+      : undefined,
+    family = {
+      ...state.families.find((f) => f.id === ride.familyId),
+      ...ride.familySnapshot,
+    },
     pickup =
       ride.pickupSnapshot ?? state.anchors.find((a) => a.id === ride.pickupId),
     dropoff =
@@ -389,7 +397,7 @@ function RideDetail({
               {driver ? (
                 <>
                   <div className="name-cell">
-                    <Avatar name={driver.name} />
+                    <Avatar name={driver.name ?? 'Driver'} />
                     <div>
                       <strong>{driver.name}</strong>
                       <small>{driver.school}</small>

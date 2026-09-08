@@ -8,6 +8,7 @@ import { Shell } from './shell';
 import { Pick } from './controls';
 import { Dashboard } from './dashboard';
 import { ServiceHours, Reports } from './service-hours';
+import { AuditLog } from './audit';
 import { ConsumerHome } from './consumer';
 import { DriverRegister, FamilyRegister, Anchors } from './registers';
 import { Rides } from './rides';
@@ -154,6 +155,7 @@ export function PilotApp({
           'settings',
           'hours',
           'reports',
+          'audit',
         ]
       : realRole === 'driver'
         ? ['overview', 'rides', 'availability', 'profile', 'safety', 'hours']
@@ -285,6 +287,7 @@ export function PilotApp({
             <ServiceHours {...props} commit={commit} />
           )}
           {visiblePage === 'reports' && <Reports {...props} />}
+          {visiblePage === 'audit' && <AuditLog state={data!} />}
         </>
       )}
       {modal && data && (

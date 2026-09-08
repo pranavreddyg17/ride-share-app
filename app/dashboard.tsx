@@ -133,12 +133,12 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
               </TableHeader>
               <TableBody>
                 {schedule.map((ride) => {
-                  const family = state.families.find(
-                    (f) => f.id === ride.familyId,
-                  );
-                  const driver = state.drivers.find(
-                    (d) => d.id === ride.driverId,
-                  );
+                  const family =
+                    ride.familySnapshot ??
+                    state.families.find((f) => f.id === ride.familyId);
+                  const driver =
+                    ride.driverSnapshot ??
+                    state.drivers.find((d) => d.id === ride.driverId);
                   return (
                     <TableRow key={ride.id}>
                       <TableCell className="schedule-time">
@@ -282,8 +282,10 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
                 >
                   <div>
                     <strong>
-                      {state.drivers.find((d) => d.id === ride.driverId)
-                        ?.name ?? 'Driver'}
+                      {ride.driverSnapshot?.name ??
+                        state.drivers.find((d) => d.id === ride.driverId)
+                          ?.name ??
+                        'Driver'}
                     </strong>
                     <span className="mono">{ride.id}</span>
                   </div>

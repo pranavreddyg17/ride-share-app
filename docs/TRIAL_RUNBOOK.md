@@ -8,22 +8,22 @@ The latest admin/service-record redesign is local only, per the user's instructi
 
 Use the account/workspace that owns the existing Kinetic Youth Site. On September 8, 2026 the current Sites connection returned “project not found” and an empty site list; the hardened release could not be published through that connection. Preserve the existing project and database rather than creating a replacement.
 
-When access is restored, configure runtime values below, publish the validated build with both generated D1 migrations, and confirm success. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. The previous live version is not evidence that the local changes are deployed.
+When access is restored and publishing is separately requested, configure runtime values below, publish the validated build with all three generated D1 migrations, and confirm success. Migration `0002_clever_golden_guardian.sql` backfills a unique grant identity for existing memberships and adds audit metadata. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. The previous live version is not evidence that the local changes are deployed.
 
 ## 2. Runtime configuration
 
 Use hosting environment/secret controls and redeploy after changes. Never put real credentials in source, Git, screenshots or chat.
 
-| Variable | Purpose | Handling |
-| --- | --- | --- |
-| `KY_BOOTSTRAP_ADMIN_EMAIL` | Initial owner's verified email; expected owner is `pranavreddyg17@gmail.com` | Confirm against owning account |
-| `KY_PUBLIC_ORIGIN` | `https://kinetic-youth-pilot.pranavreddyg17.chatgpt.site` | Non-secret; no trailing slash |
-| `MAPBOX_ACCESS_TOKEN` | Server-side Directions API access | Store as secret; separate from browser token |
-| `MAPBOX_PUBLIC_TOKEN` | Public `pk.` token for map tiles | Restrict to the actual Site origin; browser-readable by design |
-| `TWILIO_ACCOUNT_SID` | Twilio account identifier | Runtime config |
-| `TWILIO_AUTH_TOKEN` | Twilio REST authentication | Secret |
-| `TWILIO_MESSAGING_SERVICE_SID` | Messaging Service with approved sender | Runtime config |
-| `KY_JOBS_TOKEN` | Random high-entropy job authentication secret | Shared only with the scheduler |
+| Variable                       | Purpose                                                                      | Handling                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `KY_BOOTSTRAP_ADMIN_EMAIL`     | Initial owner's verified email; expected owner is `pranavreddyg17@gmail.com` | Confirm against owning account                                 |
+| `KY_PUBLIC_ORIGIN`             | `https://kinetic-youth-pilot.pranavreddyg17.chatgpt.site`                    | Non-secret; no trailing slash                                  |
+| `MAPBOX_ACCESS_TOKEN`          | Server-side Directions API access                                            | Store as secret; separate from browser token                   |
+| `MAPBOX_PUBLIC_TOKEN`          | Public `pk.` token for map tiles                                             | Restrict to the actual Site origin; browser-readable by design |
+| `TWILIO_ACCOUNT_SID`           | Twilio account identifier                                                    | Runtime config                                                 |
+| `TWILIO_AUTH_TOKEN`            | Twilio REST authentication                                                   | Secret                                                         |
+| `TWILIO_MESSAGING_SERVICE_SID` | Messaging Service with approved sender                                       | Runtime config                                                 |
+| `KY_JOBS_TOKEN`                | Random high-entropy job authentication secret                                | Shared only with the scheduler                                 |
 
 Mapbox: create separate server and browser tokens. Restrict the browser token to the deployed Site and explicitly required test origins, with required read scopes. Verify Streets v12 raster tiles and `driving-traffic` directions on the actual Site. The live app does not fall back to public OSRM. See [Mapbox directions](https://docs.mapbox.com/api/navigation/directions/) and [Static Tiles API](https://docs.mapbox.com/api/maps/static-tiles/).
 
@@ -47,27 +47,27 @@ In Admin → Pilot settings → Service status, confirm the worker timestamp adv
 4. Register each guardian/student, reviewed consent and emergency number. One family record represents one student.
 5. Link each participant's actual ChatGPT email to the correct record in Account access. Add a backup coordinator. Profile email edits do not change sign-in access.
 6. Grant the same people access through the hosting audience controls. Hosting access does not grant app membership; membership does not bypass owner-only hosting.
-7. Test separate participant accounts, unrelated-family isolation, driver/admin separation and revocation.
+7. Test separate participant accounts, unrelated-family isolation, driver/admin separation and revocation. The first successful sign-in binds an approved email to a verified account ID. Replacing that identity requires revoking and re-adding the grant. Each driver record can have only one sign-in account; changing a contact email does not replace it.
 
 ## 5. Adult device rehearsal
 
 Rehearse with adults before student rides, using the actual iPhone/Android devices and connectivity expected in the trial. A passenger should observe the app; drivers should not interact with it while moving.
 
-| Test | Expected result |
-| --- | --- |
-| Request, assign and accept | One durable ride visible to its guardian, assigned driver and coordinator; retries do not duplicate it |
-| Decline accepted request | Returns to coordinator matching, clears assignment and old GPS |
-| Arrival | Fresh, sufficiently accurate device GPS near the agreed pickup |
-| Pickup code | Visible only to assigned guardian; expires after 15 minutes and starts the ride once |
-| Moving phone | Guardian/coordinator devices receive real GPS updates |
-| Network loss | Failed writes visible; stale GPS warning; reconnect refreshes current state |
-| Denied GPS, locked or backgrounded phone | Updates may stop; data becomes stale; reopen and obtain a new fix |
-| Drop-off | Wrong location, old fix and poor accuracy cannot complete the trip |
-| Help | Coordinator sees the alert, older unresolved alerts remain visible, phone fallback works |
-| Texts | Consented devices receive messages; provider receipts match admin status |
-| Completion and rating | Code consumed, completion once, further tracking denied, rating once |
-| Service-credit review | Arrival-to-drop-off suggestion includes waiting; admin reason required; approved minutes visible to the driver |
-| Credit amendment/export | Old and new decisions remain in history; only the current approval contributes to totals; Excel matches filtered records |
+| Test                                     | Expected result                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Request, assign and accept               | One durable ride visible to its guardian, assigned driver and coordinator; retries do not duplicate it                   |
+| Decline accepted request                 | Returns to coordinator matching, clears assignment and old GPS                                                           |
+| Arrival                                  | Fresh, sufficiently accurate device GPS near the agreed pickup                                                           |
+| Pickup code                              | Visible only to assigned guardian; expires after 15 minutes and starts the ride once                                     |
+| Moving phone                             | Guardian/coordinator devices receive real GPS updates                                                                    |
+| Network loss                             | Failed writes visible; stale GPS warning; reconnect refreshes current state                                              |
+| Denied GPS, locked or backgrounded phone | Updates may stop; data becomes stale; reopen and obtain a new fix                                                        |
+| Drop-off                                 | Wrong location, old fix and poor accuracy cannot complete the trip                                                       |
+| Help                                     | Coordinator sees the alert, older unresolved alerts remain visible, phone fallback works                                 |
+| Texts                                    | Consented devices receive messages; provider receipts match admin status                                                 |
+| Completion and rating                    | Code consumed, completion once, further tracking denied, rating once                                                     |
+| Service-credit review                    | Arrival-to-drop-off suggestion includes waiting; admin reason required; approved minutes visible to the driver           |
+| Credit amendment/export                  | Old and new decisions remain in history; only the current approval contributes to totals; Excel matches filtered records |
 
 This web app cannot promise continuous background GPS. Desktop simulation does not test moving-device reliability. Define phone-based fallback and a process for a ride stranded in an active state if GPS fails; there is no unaudited completion bypass. If continuous background tracking is required, finish and test the native app path before student rides.
 
@@ -79,7 +79,9 @@ Save the operational export in approved encrypted storage after trial sessions. 
 
 Establish full recovery with the hosting owner and rehearse on non-production data. D1 offers provider-managed point-in-time recovery, but access and the effective retention window for this Sites-managed database have not been verified. Confirm the recovery owner, acceptable data-loss window and a tested restore procedure. Never experiment with an in-place live restore. See [D1 Time Travel and backups](https://developers.cloudflare.com/d1/reference/time-travel/).
 
-When the processor runs, it removes request receipts after 24 hours, notification metadata after 30 days and terminal-ride GPS after 24 hours. Only the latest GPS fix is stored. Participant records and activity have no automatic deletion. Define retention/deletion for those records, exports and provider records before collecting student information.
+When the processor runs, it removes request metadata after 7 days, request receipts after 24 hours, notification metadata after 30 days and terminal-ride GPS after 24 hours. Only the latest GPS fix is stored. Participant records and business activity have no automatic deletion. Define retention/deletion for those records, exports and provider records before collecting student information.
+
+Use Admin → Request logs to investigate denied access and errors. Record the request ID when escalating an issue; match it to the business event and platform log. Follow [IAM_AND_AUDIT.md](IAM_AND_AUDIT.md) to configure external log retention, error alerts and the operational review process. Database request logging is best effort; business audit writes are transactional and fail the mutation if they cannot be recorded.
 
 ## Release decision
 

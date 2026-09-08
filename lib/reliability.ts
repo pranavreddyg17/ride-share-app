@@ -21,7 +21,39 @@ export async function executeMutation(
       400,
       'A valid Idempotency-Key is required. Refresh the app and retry.',
     );
-  const actor = `${c.email}:${c.role}:${c.recordId ?? ''}`;
+  const actor = `${c.userId}:${c.email}:${c.role}:${c.recordId ?? ''}:${c.grantId}`;
+  const operations = [
+    'driver.save',
+    'driver.status',
+    'family.save',
+    'anchor.save',
+    'availability',
+    'ride.create',
+    'ride.action',
+    'credit.review',
+    'location',
+    'event.resolve',
+    'settings',
+    'member.add',
+    'member.remove',
+  ];
+  const actions = [
+    'assign',
+    'decline',
+    'accept',
+    'arrive',
+    'refresh-code',
+    'verify',
+    'complete',
+    'cancel',
+    'sos',
+    'rating',
+  ];
+  c.action = operations.includes(String(body.op))
+    ? body.op === 'ride.action' && actions.includes(String(body.action))
+      ? 'ride.' + body.action
+      : String(body.op)
+    : 'unknown';
   const digest = Array.from(
     new Uint8Array(
       await crypto.subtle.digest(
@@ -81,7 +113,7 @@ export async function executeMutation(
     throw new Error('Mutation must have exactly one guarded primary write');
   const receipt = db()
     .prepare(
-      `INSERT INTO mutation_receipts(workspace,actor,request_id,digest,response,status,applied,created_at) VALUES (?,?,?,?,?,?,CASE WHEN ?=1 OR EXISTS (SELECT 1 FROM members WHERE email=? AND role=? AND record_id IS ?) THEN changes() ELSE 0 END,?)`,
+      `INSERT INTO mutation_receipts(workspace,actor,request_id,digest,response,status,applied,created_at) VALUES (?,?,?,?,?,?,CASE WHEN ?=1 OR EXISTS (SELECT 1 FROM members WHERE email=? AND role=? AND record_id IS ? AND user_id=? AND grant_id=?) THEN changes() ELSE 0 END,?)`,
     )
     .bind(
       c.workspace,
@@ -94,6 +126,8 @@ export async function executeMutation(
       c.email,
       c.role,
       c.recordId,
+      c.userId,
+      c.grantId,
       Date.now(),
     );
   try {

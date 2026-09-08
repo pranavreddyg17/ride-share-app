@@ -61,6 +61,9 @@ type Outbox = {
 };
 export async function processNotifications() {
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM request_logs WHERE created_at<?').bind(
+      new Date(Date.now() - 7 * 86400000).toISOString(),
+    ),
     env.DB.prepare('DELETE FROM rate_limits WHERE expires_at<?').bind(
       Date.now(),
     ),

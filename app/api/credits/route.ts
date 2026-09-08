@@ -1,3 +1,4 @@
+import { withApiLog, methodNotAllowed } from '@/lib/api-log';
 import {
   ApiError,
   context,
@@ -9,7 +10,7 @@ import {
 import { rateLimit } from '@/lib/reliability';
 import type { Ride, ServiceCredit } from '@/lib/types';
 export const dynamic = 'force-dynamic';
-export async function GET(req: Request) {
+export const GET = withApiLog(async function GET(req: Request) {
   try {
     const c = await context(req);
     requireRole(c, 'admin', 'driver');
@@ -49,4 +50,11 @@ export async function GET(req: Request) {
       },
     );
   }
-}
+});
+
+const rejectMethod = methodNotAllowed(['GET', 'HEAD']);
+export const POST = rejectMethod;
+export const PUT = rejectMethod;
+export const PATCH = rejectMethod;
+export const DELETE = rejectMethod;
+export const OPTIONS = rejectMethod;

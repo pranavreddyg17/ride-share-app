@@ -137,6 +137,20 @@ export function Safety({ state, open, navigate }: ViewProps) {
                   <small>
                     {date(e.createdAt)} · {time(e.createdAt)}
                   </small>
+                  {state.role === 'admin' && (
+                    <small>
+                      {e.actorEmail
+                        ? `${e.actorEmail} · ${e.action ?? e.kind}`
+                        : 'Legacy event: actor not recorded'}
+                      {e.requestId && (
+                        <span
+                          style={{ display: 'block', overflowWrap: 'anywhere' }}
+                        >
+                          Request {e.requestId}
+                        </span>
+                      )}
+                    </small>
+                  )}
                 </div>
               </div>
             ))}
@@ -157,6 +171,7 @@ export function Availability({
   commit,
 }: ViewProps & { commit: Commit }) {
   const driver = state.drivers[0];
+  const [version, setVersion] = useState(driver?.version);
   const [slots, setSlots] = useState<Slot[]>(() => driver?.availability ?? []),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -166,7 +181,8 @@ export function Availability({
     setError('');
     setSaved(false);
     try {
-      await commit({ op: 'availability', slots });
+      const result = await commit({ op: 'availability', slots, version });
+      setVersion(result.version);
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);

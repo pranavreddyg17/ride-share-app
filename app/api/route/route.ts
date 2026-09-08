@@ -1,10 +1,11 @@
+import { withApiLog, methodNotAllowed } from '@/lib/api-log';
 import { ApiError, context, record, canSeeRide } from '@/lib/server';
 import type { Anchor, Ride } from '@/lib/types';
 import { env } from 'cloudflare:workers';
 import { directions } from '@/lib/providers';
 import { rateLimit } from '@/lib/reliability';
 export const dynamic = 'force-dynamic';
-export async function GET(req: Request) {
+export const GET = withApiLog(async function GET(req: Request) {
   try {
     const c = await context(req);
     await rateLimit(c, 'route', 30);
@@ -36,8 +37,16 @@ export async function GET(req: Request) {
     ]);
     const current = url.searchParams.get('leg') === 'current';
     if (
+      url.searchParams.has('leg') &&
+      !['current', 'full'].includes(url.searchParams.get('leg')!)
+    )
+      throw new ApiError(400, 'Unknown route leg.');
+    if (!ride && (!pickup.active || !dropoff.active))
+      throw new ApiError(409, 'Choose active pickup locations.');
+    if (
       current &&
       (!ride ||
+        !['accepted', 'arrived', 'in_progress'].includes(ride.status) ||
         ride.lat === null ||
         ride.lng === null ||
         !ride.locationAt ||
@@ -77,4 +86,11 @@ export async function GET(req: Request) {
       },
     );
   }
-}
+});
+
+const rejectMethod = methodNotAllowed(['GET', 'HEAD']);
+export const POST = rejectMethod;
+export const PUT = rejectMethod;
+export const PATCH = rejectMethod;
+export const DELETE = rejectMethod;
+export const OPTIONS = rejectMethod;
