@@ -1,26 +1,16 @@
 'use client';
-import { watchDevicePosition } from '@/lib/gps';
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { ChevronRight as ChevronIcon } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from '@/components/ui/input-otp';
 import {
   Plus,
   ArrowLeft,
   ShieldCheck,
   MapPin,
-  Navigation,
-  Check,
   Phone,
   AlertCircle,
   CarFront,
   Star,
-  Radio,
-  Square,
   ArrowRight,
 } from 'lucide-react';
 import { Heading, type ViewProps } from './dashboard';
@@ -28,7 +18,7 @@ import { Badge, Avatar } from './shell';
 import { EmptyState } from './controls';
 import { RideMap } from './ride-map';
 import { TripScreen } from './consumer';
-import { type Ride, time, date, active } from '@/lib/types';
+import { type Ride, time, date } from '@/lib/types';
 import type { Commit } from './dialogs';
 import { RideLedger, RideFacts } from './service-hours';
 export function Rides({
@@ -85,7 +75,11 @@ export function Rides({
         {state.role === 'family' && (
           <button className="btn primary" onClick={() => navigate('overview')}>
             <Plus />
-            Plan a ride
+            {state.rides.some(
+              (r) => !['completed', 'cancelled'].includes(r.status),
+            )
+              ? 'Current ride'
+              : 'Request a ride'}
           </button>
         )}
       </Heading>
@@ -126,18 +120,23 @@ export function Rides({
             <div className="compact-route">
               <div>
                 <i className="route-dot" />
-                {state.anchors.find((a) => a.id === r.pickupId)?.name}
+                {r.pickupSnapshot?.name ??
+                  state.anchors.find((a) => a.id === r.pickupId)?.name}
               </div>
               <div>
                 <i className="route-square" />
-                {state.anchors.find((a) => a.id === r.dropoffId)?.name}
+                {r.dropoffSnapshot?.name ??
+                  state.anchors.find((a) => a.id === r.dropoffId)?.name}
               </div>
             </div>
             <footer>
               <Badge value={r.status} />
               <span>
-                {state.drivers.find((d) => d.id === r.driverId)?.name ??
-                  'Awaiting a match'}
+                {r.driverSnapshot?.name ??
+                  state.drivers.find((d) => d.id === r.driverId)?.name ??
+                  (r.status === 'cancelled'
+                    ? 'Unassigned'
+                    : 'Awaiting assignment')}
               </span>
             </footer>
           </button>
@@ -159,15 +158,11 @@ function RideDetail({
   navigate,
   commit,
 }: ViewProps & { ride: Ride; commit: Commit }) {
-  const [otp, setOtp] = useState(''),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [route, setRoute] = useState<{ distance: number; duration: number } | null>(
       null,
-    ),
-    [sharing, setSharing] = useState(false),
-    [gpsError, setGpsError] = useState('');
-  const lastPing = useRef(0);
+    );
   const driver = ride.driverId
       ? {
           ...state.drivers.find((d) => d.id === ride.driverId),
@@ -187,69 +182,17 @@ function RideDetail({
   const terminal = ['completed', 'cancelled'].includes(status);
   const stale =
     !ride.locationAt || Date.now() - Date.parse(ride.locationAt) > 45000;
-  const expired =
-    !ride.otpExpiresAt || Date.parse(ride.otpExpiresAt) < Date.now();
-  const isDriver = state.role === 'driver';
-  const currentCommit = useRef(commit);
-  currentCommit.current = commit;
-  useEffect(() => {
-    if (!sharing || !isDriver || terminal) return;
-    if (!navigator.geolocation) {
-      setGpsError('This browser does not support device location.');
-      setSharing(false);
-      return;
-    }
-    const stop = watchDevicePosition(
-      navigator.geolocation,
-      (position) => {
-        if (Date.now() - lastPing.current < 5000) return;
-        lastPing.current = Date.now();
-        const { latitude, longitude, accuracy } = position.coords;
-        currentCommit
-          .current({
-            op: 'location',
-            id: ride.id,
-            lat: latitude,
-            lng: longitude,
-            accuracy,
-            source: 'device',
-            capturedAt: new Date(position.timestamp).toISOString(),
-          })
-          .catch((error: Error) => {
-            setGpsError(error.message);
-            setSharing(false);
-          });
-      },
-      (e) => {
-        setGpsError(
-          e.code === 1
-            ? 'Location permission was denied. Allow location for this site, then try again.'
-            : 'A GPS fix is unavailable. Move to an open area and try again.',
-        );
-        setSharing(false);
-      },
-    );
-    return stop;
-  }, [sharing, isDriver, terminal, ride.id, state.demo, state.role]);
   async function action(action: string, extra: Record<string, unknown> = {}) {
     setBusy(true);
     setError('');
     try {
       await commit({ op: 'ride.action', id: ride.id, action, ...extra });
-      setOtp('');
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  const stage = [
-    'pending',
-    'accepted',
-    'arrived',
-    'in_progress',
-    'completed',
-  ].indexOf(status);
   return (
     <>
       <button
@@ -278,7 +221,7 @@ function RideDetail({
       <div className="journey">
         <div>
           <RideFacts ride={ride} />
-          {state.role === 'admin' && ride.status === 'completed' && (
+          {ride.status === 'completed' && (
             <div className="section-foot">
               <span>
                 Service credit is reviewed separately from recorded trip time.
@@ -321,7 +264,7 @@ function RideDetail({
             <div className="map-foot">
               <span>
                 {state.demo
-                  ? 'Sample position · not a live vehicle'
+                  ? 'Practice workspace'
                   : ride.locationAt
                     ? `Last reported ${time(ride.locationAt)}`
                     : 'No GPS position received'}
@@ -368,29 +311,13 @@ function RideDetail({
                   {ride.notes}
                 </div>
               )}
-              {isDriver && !terminal && (
-                <div style={{ marginTop: 20 }}>
-                  <a
-                    className="btn"
-                    target="_blank"
-                    rel="noreferrer"
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${status === 'in_progress' ? dropoff?.lat : pickup?.lat},${status === 'in_progress' ? dropoff?.lng : pickup?.lng}&travelmode=driving`}
-                  >
-                    <Navigation />
-                    Open driving directions
-                  </a>
-                  <p className="muted" style={{ fontSize: 12, marginTop: 9 }}>
-                    Set up navigation while parked.
-                  </p>
-                </div>
-              )}
             </div>
           </section>
         </div>
         <div>
           <section className="panel">
             <div className="panel-heading">
-              <h2>{driver ? 'Your driver' : 'Matching a driver'}</h2>
+              <h2>{driver ? 'Assigned driver' : 'Driver assignment'}</h2>
               <CarFront size={19} />
             </div>
             <div className="detail-body">
@@ -415,7 +342,7 @@ function RideDetail({
                     <span>Student</span>
                     {family?.student}
                   </div>
-                  {!isDriver && (
+                  {driver.phone && (
                     <a
                       href={`tel:${driver.phone}`}
                       className="text-link"
@@ -428,302 +355,88 @@ function RideDetail({
                 </>
               ) : (
                 <p className="muted" style={{ fontSize: 14, lineHeight: 1.7 }}>
-                  Your coordinator will assign a reviewed driver. Check back
-                  here for confirmation.
+                  Assign an approved driver to this request.
                 </p>
               )}
-              {state.role === 'admin' &&
-                ['pending', 'accepted'].includes(status) && (
-                  <button
-                    className="btn primary"
-                    style={{ width: '100%', marginTop: 17 }}
-                    onClick={() => open({ kind: 'assign', ride })}
-                  >
-                    {driver ? 'Reassign driver' : 'Assign a driver'}
-                  </button>
-                )}
+              {['pending', 'accepted'].includes(status) && (
+                <button
+                  className="btn primary"
+                  style={{ width: '100%', marginTop: 17 }}
+                  onClick={() => open({ kind: 'assign', ride })}
+                >
+                  {driver ? 'Reassign driver' : 'Assign a driver'}
+                </button>
+              )}
             </div>
           </section>
           <section className="panel" style={{ marginTop: 20 }}>
             <div className="panel-heading">
-              <h2>Every step, together</h2>
+              <h2>Family contact</h2>
             </div>
             <div className="detail-body">
-              {[
-                'Ride requested',
-                'Driver confirmed',
-                'Driver at pickup',
-                'Pickup code verified',
-                'Arrived at destination',
-              ].map((name, i) => (
-                <div
-                  key={name}
-                  className={`step-line ${stage >= i ? 'done' : ''}`}
-                  style={{ padding: '10px 0' }}
-                >
-                  {stage >= i ? (
-                    <Check />
-                  ) : (
-                    <span
-                      style={{
-                        border: '1px solid #e0e0e0',
-                        width: 19,
-                        height: 19,
-                        borderRadius: '50%',
-                        flexShrink: 0,
-                      }}
-                    />
-                  )}
-                  <div>
-                    {name}
-                    {i === 3 && ride.startedAt && (
-                      <small>{time(ride.startedAt)}</small>
-                    )}
-                    {i === 4 && ride.completedAt && (
-                      <small>{time(ride.completedAt)}</small>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {status === 'cancelled' && (
-                <div className="notice warning" style={{ marginTop: 10 }}>
-                  Cancelled: {ride.cancelReason}
-                </div>
-              )}
-              {state.role === 'family' && status === 'arrived' && (
-                <div
-                  style={{
-                    marginTop: 18,
-                    paddingTop: 18,
-                    borderTop: '1px solid #eaeaea',
-                  }}
-                >
-                  <strong style={{ fontSize: 14 }}>Your pickup code</strong>
-                  {ride.otp && !expired ? (
-                    <>
-                      <div className="code-display">
-                        {ride.otp.split('').map((v, i) => (
-                          <span key={i}>{v}</span>
-                        ))}
-                      </div>
-                      <p
-                        className="muted"
-                        style={{ fontSize: 12, lineHeight: 1.6 }}
-                      >
-                        Give this code to your assigned driver at pickup.
-                        Expires in{' '}
-                        {Math.max(
-                          0,
-                          Math.ceil(
-                            (Date.parse(ride.otpExpiresAt!) - Date.now()) /
-                              60000,
-                          ),
-                        )}{' '}
-                        min.
-                      </p>
-                    </>
-                  ) : (
-                    <p className="error-message">
-                      The code expired. Contact the coordinator for a new code.
-                    </p>
-                  )}
-                </div>
-              )}
-              {isDriver && !terminal && (
-                <div
-                  style={{
-                    marginTop: 17,
-                    paddingTop: 17,
-                    borderTop: '1px solid #ececec',
-                  }}
-                >
-                  {status === 'pending' && (
-                    <button
-                      className="btn primary"
-                      style={{ width: '100%' }}
-                      disabled={busy || driver?.status !== 'approved'}
-                      onClick={() => action('accept')}
-                    >
-                      Confirm this ride
-                      <Check />
-                    </button>
-                  )}
-                  {status === 'accepted' && (
-                    <button
-                      className="btn primary"
-                      style={{ width: '100%' }}
-                      disabled={busy}
-                      onClick={() => action('arrive')}
-                    >
-                      <MapPin />
-                      I’ve arrived at pickup
-                    </button>
-                  )}
-                  {status === 'arrived' && (
-                    <>
-                      <label
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 500,
-                          display: 'block',
-                          marginBottom: 12,
-                        }}
-                        htmlFor="pickup-otp"
-                      >
-                        Ask the family for their pickup code
-                      </label>
-                      <InputOTP
-                        id="pickup-otp"
-                        maxLength={6}
-                        pattern="^[0-9]+$"
-                        value={otp}
-                        onChange={setOtp}
-                        disabled={busy || ride.otpAttempts >= 5 || expired}
-                      >
-                        <InputOTPGroup>
-                          {Array.from({ length: 6 }, (_, i) => (
-                            <InputOTPSlot
-                              key={i}
-                              index={i}
-                              className="h-11 w-10 text-lg"
-                            />
-                          ))}
-                        </InputOTPGroup>
-                      </InputOTP>
-                      <button
-                        className="btn primary"
-                        style={{ width: '100%', marginTop: 14 }}
-                        onClick={() => action('verify', { otp })}
-                        disabled={
-                          otp.length !== 6 ||
-                          busy ||
-                          expired ||
-                          ride.otpAttempts >= 5
-                        }
-                      >
-                        <ShieldCheck />
-                        Verify pickup & start
-                      </button>
-                      {(expired || ride.otpAttempts >= 5) && (
-                        <p className="error-message">
-                          {expired ? 'Code expired.' : 'Too many attempts.'} Ask
-                          the coordinator for a fresh code.
-                        </p>
-                      )}
-                    </>
-                  )}
-                  {status === 'in_progress' && (
-                    <>
-                      <button
-                        className="btn primary"
-                        style={{ width: '100%' }}
-                        disabled={busy}
-                        onClick={() => action('complete')}
-                      >
-                        <Check />
-                        Confirm drop-off
-                      </button>
-                      <p
-                        className="muted"
-                        style={{ fontSize: 12, marginTop: 10, lineHeight: 1.6 }}
-                      >
-                        {state.demo
-                          ? 'Practice mode skips the GPS distance check.'
-                          : 'Requires a recent, accurate GPS fix within 200 m of the destination.'}
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-              {state.role === 'admin' && status === 'arrived' && (
-                <button
-                  className="btn"
-                  style={{ width: '100%', marginTop: 15 }}
-                  disabled={busy}
-                  onClick={() => action('refresh-code')}
-                >
-                  <ShieldCheck />
-                  Issue new pickup code
-                </button>
-              )}
-              {status === 'completed' &&
-                (ride.rating ? (
-                  <div className="notice" style={{ marginTop: 15 }}>
-                    <Star fill="#7e7e7e" />
-                    {ride.rating}/5 ·{' '}
-                    {ride.feedback || 'Thanks for riding with us.'}
-                  </div>
-                ) : (
-                  state.role === 'family' && (
-                    <button
-                      className="btn primary"
-                      style={{ width: '100%', marginTop: 17 }}
-                      onClick={() => open({ kind: 'rating', ride })}
-                    >
-                      <Star />
-                      Rate this ride
-                    </button>
-                  )
-                ))}
-              {error && (
-                <p role="alert" className="error-message">
-                  {error}
-                </p>
-              )}
-              {busy && (
-                <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-                  Updating ride…
-                </p>
-              )}
-              {['pending', 'accepted', 'arrived'].includes(status) && (
-                <button
-                  className="text-link"
-                  style={{ color: '#696969', marginTop: 18 }}
-                  disabled={busy}
-                  onClick={() => open({ kind: 'cancel', ride })}
-                >
-                  {isDriver && status === 'pending'
-                    ? 'Decline ride'
-                    : 'Cancel ride'}
-                </button>
+              <div className="detail-pair">
+                <span>Student</span>
+                <strong>{family.student}</strong>
+              </div>
+              <div className="detail-pair">
+                <span>Guardian</span>
+                {family.guardian}
+              </div>
+              {family.phone && (
+                <a className="text-link" href={`tel:${family.phone}`}>
+                  <Phone size={14} />
+                  {family.phone}
+                </a>
               )}
             </div>
           </section>
-          {isDriver && active(status) && (
+          {(!terminal || !!ride.rating || !!ride.cancelReason) && (
             <section className="panel" style={{ marginTop: 20 }}>
               <div className="panel-heading">
-                <h2>Share your location</h2>
-                <Radio size={18} />
+                <h2>{terminal ? 'Ride outcome' : 'Ride actions'}</h2>
               </div>
               <div className="detail-body">
-                <p
-                  className="muted"
-                  style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 15 }}
-                >
-                  Keep this page open with location permission enabled. Your
-                  assigned family and coordinator see updates about every 5
-                  seconds.
-                </p>
-                <button
-                  className={`btn ${sharing ? '' : 'primary'}`}
-                  style={{ width: '100%' }}
-                  onClick={() => {
-                    setSharing(!sharing);
-                    setGpsError('');
-                  }}
-                >
-                  {sharing ? <Square /> : <Navigation />}
-                  {sharing ? 'Stop location sharing' : 'Share device location'}
-                </button>
-                {gpsError && (
+                {status === 'cancelled' && (
+                  <div className="notice warning" style={{ marginTop: 10 }}>
+                    Cancelled: {ride.cancelReason}
+                  </div>
+                )}
+                {status === 'arrived' && (
+                  <button
+                    className="btn"
+                    style={{ width: '100%', marginTop: 15 }}
+                    disabled={busy}
+                    onClick={() => action('refresh-code')}
+                  >
+                    <ShieldCheck />
+                    Issue new pickup code
+                  </button>
+                )}
+                {ride.rating && (
+                  <div className="notice" style={{ marginTop: 15 }}>
+                    <Star />
+                    {ride.rating}/5{ride.feedback ? ` · ${ride.feedback}` : ''}
+                  </div>
+                )}
+                {error && (
                   <p role="alert" className="error-message">
-                    {gpsError}
+                    {error}
                   </p>
                 )}
-                {sharing && !gpsError && (
-                  <p className="notice" style={{ marginTop: 12, fontSize: 12 }}>
-                    Location sharing is enabled. Waiting for the next GPS fix.
+                {busy && (
+                  <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+                    Updating ride…
                   </p>
+                )}
+                {['pending', 'accepted', 'arrived'].includes(status) && (
+                  <button
+                    className="text-link"
+                    style={{ color: '#696969', marginTop: 18 }}
+                    disabled={busy}
+                    onClick={() => open({ kind: 'cancel', ride })}
+                  >
+                    Cancel ride
+                  </button>
                 )}
               </div>
             </section>

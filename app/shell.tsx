@@ -10,10 +10,8 @@ import {
   ShieldCheck,
   Settings2,
   ChevronRight,
-  FileSpreadsheet,
-  ListFilter,
   GraduationCap,
-  LogOut,
+  CircleUserRound,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -32,14 +30,12 @@ import type { ReactNode } from 'react';
 export const sections = [
   { id: 'overview', label: 'Dispatch', icon: LayoutDashboard },
   { id: 'rides', label: 'Rides', icon: Route },
-  { id: 'drivers', label: 'Driver register', icon: CarFront },
+  { id: 'drivers', label: 'Drivers', icon: CarFront },
   { id: 'families', label: 'Families', icon: Users },
-  { id: 'anchors', label: 'Anchor locations', icon: MapPin },
-  { id: 'safety', label: 'Safety & activity', icon: ShieldCheck },
-  { id: 'settings', label: 'Pilot settings', icon: Settings2 },
+  { id: 'anchors', label: 'Locations', icon: MapPin },
+  { id: 'safety', label: 'Help & activity', icon: ShieldCheck },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
   { id: 'hours', label: 'Service hours', icon: GraduationCap },
-  { id: 'reports', label: 'Reports & exports', icon: FileSpreadsheet },
-  { id: 'audit', label: 'Request logs', icon: ListFilter },
 ];
 export function Brand() {
   return (
@@ -47,7 +43,6 @@ export function Brand() {
       <span className="brand-mark">ky.</span>
       <div>
         <strong>Kinetic Youth</strong>
-        <small>TRANSPORTATION / SERVICE</small>
       </div>
     </div>
   );
@@ -87,49 +82,23 @@ export function Badge({ value }: { value: string }) {
 function Navigation({
   page,
   onNavigate,
-  role,
   counts,
 }: {
   page: string;
   onNavigate: (p: string) => void;
-  role: string;
   counts: Record<string, number>;
 }) {
   const { setOpenMobile } = useSidebar();
-  const opts =
-    role === 'admin'
-      ? [
-          sections[0],
-          sections[1],
-          sections[7],
-          sections[8],
-          sections[2],
-          sections[3],
-          sections[4],
-          sections[5],
-          sections[9],
-          sections[6],
-        ]
-      : role === 'driver'
-        ? [
-            sections[0],
-            { ...sections[1], label: 'My rides' },
-            {
-              id: 'availability',
-              label: 'My availability',
-              icon: GraduationCap,
-            },
-            { id: 'profile', label: 'Driver profile', icon: CarFront },
-            sections[7],
-            sections[5],
-          ]
-        : [
-            sections[0],
-            { ...sections[1], label: 'My rides' },
-            { id: 'family', label: 'My family', icon: Users },
-            sections[4],
-            sections[5],
-          ];
+  const opts = [
+    'overview',
+    'rides',
+    'hours',
+    'drivers',
+    'families',
+    'anchors',
+    'safety',
+    'settings',
+  ].map((id) => sections.find((section) => section.id === id)!);
   return (
     <SidebarMenu className="nav-items">
       {opts.map((s) => (
@@ -155,7 +124,7 @@ export function Shell({
   page,
   onNavigate,
   role = 'admin',
-  name = 'Alex Morgan',
+  name = '',
   demo = true,
   counts = {},
   roleControl,
@@ -167,7 +136,6 @@ export function Shell({
   name?: string;
   demo?: boolean;
   counts?: Record<string, number>;
-  completed?: number;
   roleControl?: ReactNode;
 }) {
   if (role !== 'admin')
@@ -237,23 +205,9 @@ export function Shell({
       <Sidebar>
         <SidebarHeader style={{ padding: 0 }}>
           <Brand />
-          <div className="pilot-place">
-            <MapPin size={18} />
-            <div>
-              North Texas<small>Community pilot</small>
-            </div>
-            <ChevronRight size={15} />
-          </div>
         </SidebarHeader>
         <SidebarContent>
-          <p className="nav-label">
-            {role === 'admin'
-              ? 'OPERATIONS'
-              : role === 'driver'
-                ? 'DRIVER WORKSPACE'
-                : 'FAMILY WORKSPACE'}
-          </p>
-          <Navigation {...{ page, onNavigate, role, counts }} />
+          <Navigation {...{ page, onNavigate, counts }} />
         </SidebarContent>
         <SidebarFooter style={{ padding: 0 }}>
           <div className="side-person">
@@ -269,7 +223,7 @@ export function Shell({
               </small>
             </div>
             <Link href="/login" aria-label="Account and sign in">
-              <LogOut size={16} />
+              <CircleUserRound size={18} />
             </Link>
           </div>
         </SidebarFooter>
@@ -290,22 +244,11 @@ export function Shell({
             </strong>
           </div>
           <div className="top-actions">
-            {demo && (
-              <span className="practice-label">
-                Practice mode · sample data
-              </span>
-            )}
+            {demo && <span className="practice-label">Practice</span>}
             {roleControl}
-            <Avatar name={name} />
           </div>
         </header>
-        <div className="page-wrap">
-          {children}
-          <footer className="screen-footer">
-            <span>© 2026 Kinetic Youth · North Texas</span>
-            <span>Times shown in Central Time</span>
-          </footer>
-        </div>
+        <div className="page-wrap">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

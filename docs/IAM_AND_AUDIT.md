@@ -14,6 +14,10 @@ One driver record has one linked account. A family record can have multiple appr
 
 Practice data belongs to `practice:<verified user ID>`. Role switching operates only in that workspace and never grants pilot access. Practice logs and records are scoped to that same user.
 
+The interface waits for verified workspace data before displaying role navigation. A 401 or 403 on a later state refresh clears the loaded records and shows the account/access screen; the server remains the enforcement boundary.
+
+An assigned driver receives the guardian phone only while their trip is accepted, at pickup, or in progress. Pending assignments and completed/cancelled trips do not expose that number unless another accepted or active trip connects the same driver and family. Guardian email, notes and emergency contacts remain admin/family-only. The driver screen offers a call link for this limited contact window.
+
 ## API permissions
 
 | Endpoint                  | Methods         | Access and scope                                                               |
@@ -34,13 +38,13 @@ Unsupported methods return 405. Pilot role overrides are ignored. State POST rej
 
 Successful record mutations append events in the same transaction as the primary write. New events include UTC time, verified actor ID/email, actual role, action, record type/ID and a request ID. Failed event writes fail the mutation. Credit amendments additionally preserve complete immutable decision snapshots with reviewer, minutes, status and reason. Event resolution retains the original event and appends the resolving action.
 
-Admin Safety & activity shows recent events plus all unresolved help. The operational JSON export contains all business events; Excel contains the events for its filtered rides. Old events without actor metadata are labeled as legacy, rather than assigning a guessed actor. Families and drivers do not receive the new internal actor or request metadata in their activity feed. GPS updates have request metadata but do not append a business event or route history for every coordinate.
+Admin Help & activity shows recent events plus all unresolved help, with technical attribution under Audit details. The operational JSON export contains all business events; Excel contains the events for its filtered rides. Old events without actor metadata are labeled as legacy, rather than assigning a guessed actor. Families and drivers do not receive the new internal actor or request metadata in their activity feed. GPS updates have request metadata but do not append a business event or route history for every coordinate.
 
 These records are application-audited, not tamper-proof against an operator with database credentials. Database administrators can modify stored data. Independent archival and controlled operational access are deployment responsibilities.
 
 ## Request logging and diagnosis
 
-Every API handler, including rejected methods and denied requests, returns `X-Request-Id`. The same ID accompanies a structured platform log and a best-effort D1 request record. Admin → Request logs filters exact account email and failed responses, with cursor pagination of 100 rows. Records include UTC time, actor, HTTP method, path, status and elapsed milliseconds. The UI displays Central Time.
+Every API handler, including rejected methods and denied requests, returns `X-Request-Id`. The same ID accompanies a structured platform log and a best-effort D1 request record. Admin → Settings → Request logs filters exact account email and failed responses, with cursor pagination of 100 rows. Records include UTC time, actor, HTTP method, path, status and elapsed milliseconds. The UI displays Central Time.
 
 Request logs exclude query strings, bodies, PINs, bearer tokens, credentials and GPS payloads. They are metadata, not session recordings. Error logs avoid raw provider or database messages that could contain user input. A D1 logging failure emits `request_log_write_failed` with its request ID; it does not prevent a successful read or already-committed mutation. Business audit failure remains fatal to its mutation.
 

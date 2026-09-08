@@ -32,9 +32,21 @@ export async function directions(
     token && !demo
       ? `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?overview=full&geometries=geojson&access_token=${encodeURIComponent(token)}`
       : `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
-  const response = await send(endpoint, { signal: AbortSignal.timeout(8000) });
-  if (!response.ok)
+  const response = await send(endpoint, {
+    signal: AbortSignal.timeout(8000),
+    headers: { Accept: 'application/json', 'User-Agent': 'KineticYouth/0.1' },
+  });
+  if (!response.ok) {
+    // Record upstream health without exposing coordinates or access tokens.
+    console.warn(
+      JSON.stringify({
+        event: 'directions_unavailable',
+        provider: demo ? 'osrm' : 'mapbox',
+        status: response.status,
+      }),
+    );
     throw new Error('Road directions are temporarily unavailable.');
+  }
   const data = (await response.json()) as {
     code: string;
     routes?: {

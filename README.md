@@ -19,6 +19,8 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Each account grant has a separate identity. Revoking/regranting access invalidates old writes and retry receipts; a driver record has one linked sign-in account. Membership, bound identity and grant are checked when mutations commit.
 - Admin request logs show endpoint, actor, result, duration and request ID. Durable business events record who changed which record, the action, and the same request ID. Request logs omit bodies, query strings, codes, credentials and GPS payloads. See [IAM and audit](docs/IAM_AND_AUDIT.md).
 
+Excel exports are available in **Rides** and **Service hours**. **Settings** groups General, Account access, Service status and Request logs; old `/reports` and `/audit` links still open the corresponding tools. Drivers can call the assigned guardian only during an accepted or active trip. Completed trips open their saved confirmation, and historical activity uses the original participant and route snapshots.
+
 ## Run locally
 
 Use Node 22.13+ and the existing npm lockfile.

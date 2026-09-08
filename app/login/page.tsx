@@ -22,7 +22,7 @@ export default async function Login() {
         </div>
       </section>
       <section className="login-panel">
-        <h1>Sign in.</h1>
+        <h1>{user ? 'Your account' : 'Sign in'}</h1>
         <p>
           Rides, driver schedules, and service records.
           <br />
@@ -33,7 +33,7 @@ export default async function Login() {
           target="_top"
           href={user ? '/?mode=pilot' : chatGPTSignInPath('/?mode=pilot')}
         >
-          Continue with ChatGPT
+          {user ? 'Open pilot workspace' : 'Continue with ChatGPT'}
           <ArrowRight size={18} />
         </a>
         <a

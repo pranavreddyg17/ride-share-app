@@ -10,8 +10,9 @@ import {
   Plus,
   ArrowUpRight,
   CarFront,
-  LogOut,
 } from 'lucide-react';
+import { AuditLog } from './audit';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Heading, type ViewProps } from './dashboard';
 import { Avatar, Badge } from './shell';
@@ -24,8 +25,8 @@ export function Safety({ state, open, navigate }: ViewProps) {
   return (
     <>
       <Heading
-        title="Safety & activity"
-        description="Help requests, ride milestones, and a record of coordinator decisions."
+        title="Help & activity"
+        description="Coordinator requests and ride history."
       />
       <div className="notice warning" style={{ marginBottom: 22 }}>
         <AlertCircle />
@@ -138,18 +139,24 @@ export function Safety({ state, open, navigate }: ViewProps) {
                     {date(e.createdAt)} · {time(e.createdAt)}
                   </small>
                   {state.role === 'admin' && (
-                    <small>
-                      {e.actorEmail
-                        ? `${e.actorEmail} · ${e.action ?? e.kind}`
-                        : 'Legacy event: actor not recorded'}
-                      {e.requestId && (
-                        <span
-                          style={{ display: 'block', overflowWrap: 'anywhere' }}
-                        >
-                          Request {e.requestId}
-                        </span>
-                      )}
-                    </small>
+                    <details className="event-details">
+                      <summary>Audit details</summary>
+                      <small>
+                        {e.actorEmail
+                          ? `${e.actorEmail} · ${e.action ?? e.kind}`
+                          : 'Legacy event: actor not recorded'}
+                        {e.requestId && (
+                          <span
+                            style={{
+                              display: 'block',
+                              overflowWrap: 'anywhere',
+                            }}
+                          >
+                            Request {e.requestId}
+                          </span>
+                        )}
+                      </small>
+                    </details>
                   )}
                 </div>
               </div>
@@ -338,7 +345,8 @@ export function DriverProfile({ state, open }: ViewProps) {
               Update my profile
             </button>
             <p style={{ fontSize: 12, marginTop: 13 }}>
-              Profile changes return your application to coordinator review.
+              Changes to identity, vehicle, or document dates require a new
+              review.
             </p>
           </section>
           <section className="panel settings-card">
@@ -374,10 +382,12 @@ export function Settings({
   state,
   open,
   commit,
-}: ViewProps & { commit: Commit }) {
-  const [settings, setSettings] = useState(state.settings),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+  initialTab = 'general',
+}: ViewProps & { commit: Commit; initialTab?: string }) {
+  const [tab, setTab] = useState(initialTab);
+  const [settings, setSettings] = useState(state.settings);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   async function save(e: React.SubmitEvent) {
     e.preventDefault();
     setBusy(true);
@@ -392,158 +402,134 @@ export function Settings({
   }
   return (
     <>
-      <Heading
-        title="Pilot settings"
-        description="Manage your pilot’s contacts, account access, and launch setup."
-      />
-      <div className="settings-grid">
-        <section className="panel settings-card">
-          <h2>Community pilot</h2>
-          <p>
-            The coordinator contact is shown to families and drivers during a
-            ride.
-          </p>
-          <form onSubmit={save}>
-            <Field label="Pilot name">
-              <input
-                required
-                value={settings.pilotName}
-                onChange={(e) =>
-                  setSettings({ ...settings, pilotName: e.target.value })
-                }
-              />
-            </Field>
-            <CheckField
-              checked={settings.smsConsent === true}
-              onChange={(v) => setSettings({ ...settings, smsConsent: v })}
-              label="The coordinator agreed to receive operational text alerts at this number."
-            />
-            <Field label="Coordinator name">
-              <input
-                required
-                value={settings.coordinator}
-                onChange={(e) =>
-                  setSettings({ ...settings, coordinator: e.target.value })
-                }
-              />
-            </Field>
-            <Field
-              label="Coordinator phone"
-              hint="Use a country code, e.g. +12145550123. Leave blank until confirmed."
-            >
-              <input
-                type="tel"
-                placeholder="+1"
-                value={settings.contactPhone}
-                onChange={(e) =>
-                  setSettings({ ...settings, contactPhone: e.target.value })
-                }
-              />
-            </Field>
-            {error && (
-              <p className="error-message" role="alert">
-                {error}
+      <Heading title="Settings" />
+      <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+        <TabsList className="settings-tabs">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="access">Account access</TabsTrigger>
+          <TabsTrigger value="services">Service status</TabsTrigger>
+          <TabsTrigger value="logs">Request logs</TabsTrigger>
+        </TabsList>
+        <TabsContent value="general">
+          <div className="settings-grid">
+            <section className="panel settings-card">
+              <h2>Coordinator contact</h2>
+              <p>Shown to families and drivers during a ride.</p>
+              <form onSubmit={save}>
+                <Field label="Pilot name">
+                  <input
+                    required
+                    maxLength={100}
+                    value={settings.pilotName}
+                    onChange={(e) =>
+                      setSettings({ ...settings, pilotName: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Coordinator name">
+                  <input
+                    required
+                    maxLength={100}
+                    value={settings.coordinator}
+                    onChange={(e) =>
+                      setSettings({ ...settings, coordinator: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Coordinator phone"
+                  hint="Include the country code. Leave blank until confirmed."
+                >
+                  <input
+                    type="tel"
+                    placeholder="+1"
+                    value={settings.contactPhone}
+                    onChange={(e) =>
+                      setSettings({ ...settings, contactPhone: e.target.value })
+                    }
+                  />
+                </Field>
+                <CheckField
+                  checked={settings.smsConsent === true}
+                  onChange={(smsConsent) =>
+                    setSettings({ ...settings, smsConsent })
+                  }
+                  label="Coordinator consents to operational text alerts."
+                />
+                {error && (
+                  <p className="error-message" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button className="btn primary" disabled={busy}>
+                  {busy ? 'Saving…' : 'Save contact'}
+                </button>
+              </form>
+            </section>
+            <section className="panel settings-card">
+              <h2>Workspace</h2>
+              <p>
+                {state.demo
+                  ? 'Practice uses fictional records, separate from your pilot.'
+                  : 'You are viewing your organization’s pilot records.'}
               </p>
-            )}
-            <button className="btn primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Save pilot details'}
-            </button>
-          </form>
-        </section>
-        <section className="panel settings-card">
-          <h2>
-            {state.demo
-              ? 'Ready for your own records?'
-              : 'You’re in the real pilot workspace'}
-          </h2>
-          <p>
-            {state.demo
-              ? 'Practice mode contains fictional drivers, families, and rides. Your real pilot workspace starts empty and keeps its records separate.'
-              : 'These are your organization’s records. Roles are checked against the account access register; practice personas cannot access them.'}
-          </p>
-          <div className="notice" style={{ marginBottom: 20 }}>
-            <ShieldCheck />
-            {state.demo
-              ? 'Practice data is isolated from the real pilot. Only registered accounts can access pilot records.'
-              : 'Add drivers, families, anchor locations, and account access before coordinating trips.'}
-          </div>
-          <a
-            className="btn primary"
-            href={state.demo ? '/?mode=pilot' : '/?mode=practice'}
-          >
-            {state.demo
-              ? 'Open real pilot workspace'
-              : 'Return to practice workspace'}
-            <ArrowUpRight />
-          </a>
-          <div
-            style={{
-              marginTop: 23,
-              paddingTop: 23,
-              borderTop: '1px solid #eaeaea',
-            }}
-          >
-            <h2>Sign-in</h2>
-            <p>
-              Secure ChatGPT sign-in is active. Access to the pilot is granted
-              by verified email. Ride text alerts are configured separately;
-              phone-number sign-in is not available.
-            </p>
-            <Link className="text-link" href="/login">
-              <LogOut size={15} />
-              Account & sign-in options
-            </Link>
-          </div>
-        </section>
-        <section className="panel settings-card">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 15,
-            }}
-          >
-            <h2>Account access</h2>
-            {!state.demo && (
-              <button
-                className="btn small"
-                onClick={() => open({ kind: 'member' })}
+              <a
+                className="btn"
+                href={
+                  state.demo ? '/?mode=pilot' : '/?mode=practice&viewAs=admin'
+                }
               >
-                <Plus />
-                Add account
-              </button>
-            )}
+                {state.demo
+                  ? 'Open pilot workspace'
+                  : 'Open practice workspace'}
+                <ArrowUpRight />
+              </a>
+              <div className="settings-account">
+                <h2>Signed in as</h2>
+                <p>{state.email}</p>
+                <Link className="text-link" href="/login">
+                  Manage sign-in
+                  <ArrowUpRight size={15} />
+                </Link>
+              </div>
+            </section>
           </div>
-          <p>
-            Register the driver or family first, then link their sign-in email
-            to that record. Coordinators are added here too.
-          </p>
-          {state.demo ? (
-            <div className="notice">
-              <Users />
-              Practice accounts use the role selector. Switch to the real pilot
-              workspace to manage actual access.
+        </TabsContent>
+        <TabsContent value="access">
+          <section className="panel settings-card">
+            <div className="section-head">
+              <h2>Account access</h2>
+              {!state.demo && (
+                <button
+                  className="btn primary"
+                  onClick={() => open({ kind: 'member' })}
+                >
+                  <Plus />
+                  Add account
+                </button>
+              )}
             </div>
-          ) : (
-            <div>
-              {state.members.map((m) => (
+            <p>
+              Link a sign-in email to a registered driver or family, or grant
+              coordinator access.
+            </p>
+            {state.demo ? (
+              <p className="notice">
+                Practice uses the view selector. Manage participant access in
+                the pilot workspace.
+              </p>
+            ) : (
+              state.members.map((m) => (
                 <div className="detail-pair" key={m.email}>
                   <div>
-                    <strong style={{ fontSize: 13, fontWeight: 500 }}>
-                      {m.name}
-                    </strong>
-                    <small
-                      style={{ display: 'block', fontSize: 12, marginTop: 4 }}
-                    >
-                      {m.email}
-                    </small>
+                    <strong>{m.name}</strong>
+                    <small className="account-email">{m.email}</small>
                   </div>
                   <div className="actions">
                     <span className="badge">{m.role}</span>
                     {m.email !== state.email && (
                       <button
                         className="text-link"
-                        style={{ color: '#626262' }}
                         onClick={() =>
                           open({ kind: 'member-remove', email: m.email })
                         }
@@ -553,38 +539,17 @@ export function Settings({
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="panel settings-card">
-          <h2>Before the first real ride</h2>
-          <p>
-            This pilot has coordination tools. The following operational setup
-            still needs to be completed.
-          </p>
-          <div className="details-list">
-            {[
-              'Confirm driver eligibility, license restrictions, coverage, consent, and the screening process.',
-              'Confirm anchor partners, pickup instructions, and the coordinator’s response process.',
-              'Connect and test SMS alerts; in-app help requests are not continuously monitored.',
-              'Test GPS and handoff on actual phones. This web app tracks only while open.',
-              'Configure participant access, retention and backups, and a production maps service.',
-            ].map((text, i) => (
-              <div className="check-row" key={text}>
-                <span
-                  className="badge amber"
-                  style={{ width: 24, justifyContent: 'center', flexShrink: 0 }}
-                >
-                  {i + 1}
-                </span>
-                <span>{text}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      <OperationsStatus demo={state.demo} />
+              ))
+            )}
+          </section>
+        </TabsContent>
+        <TabsContent value="services">
+          <OperationsStatus demo={state.demo} />
+        </TabsContent>
+        <TabsContent value="logs">
+          <AuditLog state={state} embedded />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
@@ -704,11 +669,13 @@ function OperationsStatus({ demo }: { demo: boolean }) {
               </div>
             ))
           )}
-          <p>
-            “Accepted” means the provider accepted the text. Only “delivered”
-            confirms a delivery receipt. Check failed or unknown messages and
-            contact participants directly when needed.
-          </p>
+          {!!data.notifications.length && (
+            <p>
+              “Accepted” means the provider accepted the text. Only “delivered”
+              confirms a delivery receipt. Check failed or unknown messages and
+              contact participants directly when needed.
+            </p>
+          )}
         </>
       )}
       <a

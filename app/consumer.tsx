@@ -13,13 +13,11 @@ import {
   Navigation,
   Play,
   Square,
-  ChevronRight,
   Check,
   Radio,
   Users,
   ArrowUpRight,
   CalendarDays,
-  GraduationCap,
 } from 'lucide-react';
 import {
   Combobox,
@@ -107,62 +105,32 @@ export function ConsumerHome(props: ConsumerProps) {
       />
     );
   return (
-    <div className="ride-experience">
-      <RideMap
-        anchors={state.anchors}
-        demo={state.demo}
-        role={state.role}
-        full
-      />
-      <div className="map-region">
-        <MapPin size={14} />
-        Flower Mound, Texas
+    <section className="driver-idle">
+      <CarFront size={32} />
+      <h1>No assigned rides</h1>
+      <p>Your coordinator’s next assignment will appear here.</p>
+      <div className="actions">
+        <button
+          className="btn primary"
+          onClick={() => props.navigate('availability')}
+        >
+          Update availability
+        </button>
+        <button className="btn" onClick={() => props.navigate('rides')}>
+          View ride history
+        </button>
       </div>
-      <section className="trip-panel">
-        <div className="sheet-handle" />
-        <div className="trip-panel-content">
-          <span className="caps-label">DRIVER HOME</span>
-          <h1>No assigned rides</h1>
-          <p className="panel-copy">
-            Your coordinator’s assigned requests will appear here. Keep your
-            weekly availability up to date.
-          </p>
-          <div className="ride-option">
-            <span className="vehicle-symbol">
-              <CarFront size={36} />
-            </span>
-            <div>
-              <strong>{state.drivers[0]?.vehicle ?? 'Your vehicle'}</strong>
-              <p>{state.drivers[0]?.plate ?? 'Complete your driver profile'}</p>
-            </div>
-          </div>
-          <button
-            className="ride-button"
-            onClick={() => props.navigate('availability')}
-          >
-            Set my availability
-            <ArrowRight />
-          </button>
-          <button
-            className="ride-button secondary"
-            onClick={() => props.navigate('rides')}
-          >
-            View ride history
-          </button>
-        </div>
-      </section>
-    </div>
+    </section>
   );
 }
+
 function BookingScreen({
   state,
   navigate,
   commit,
   onBack,
 }: ConsumerProps & { onBack?: () => void }) {
-  const [pickup, setPickup] = useState(
-      state.anchors.find((a) => a.active)?.id ?? '',
-    ),
+  const [pickup, setPickup] = useState(''),
     [dropoff, setDropoff] = useState(''),
     [at, setAt] = useState(() => {
       const d = new Date(Date.now() + 60 * 60000);
@@ -233,13 +201,13 @@ function BookingScreen({
             </button>
           )}
           <span className="caps-label">
-            {step === 0 ? 'LET’S GET THERE' : 'REVIEW YOUR RIDE'}
+            {family?.student ?? 'Student ride'}
           </span>
           <h1>{step === 0 ? 'Request a ride' : 'Review your ride'}</h1>
           <p className="panel-copy">
             {step === 0
               ? `Plan ${family?.student.split(' ')[0] ?? 'your student'}’s next ride.`
-              : 'Community rides, coordinated with care.'}
+              : 'Confirm the pickup details before requesting.'}
           </p>
           {step === 0 ? (
             <>
@@ -275,7 +243,7 @@ function BookingScreen({
                   />
                 </div>
               </div>
-              <Field label="What’s the occasion?">
+              <Field label="Activity">
                 <input
                   value={activity}
                   onChange={(e) => setActivity(e.target.value)}
@@ -302,32 +270,6 @@ function BookingScreen({
                 Schedule 30 minutes to 7 days ahead. Rides use registered
                 community locations.
               </p>
-              <div className="frequent-places">
-                <span className="caps-label">COMMUNITY DESTINATIONS</span>
-                {state.anchors
-                  .filter((a) => a.id !== pickup)
-                  .slice(0, 3)
-                  .map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => changeLocation(setDropoff, a.id)}
-                    >
-                      <span className="place-icon">
-                        {a.category === 'School' ||
-                        a.category === 'Learning' ? (
-                          <GraduationCap />
-                        ) : (
-                          <MapPin />
-                        )}
-                      </span>
-                      <span>
-                        <strong>{a.name}</strong>
-                        <small>{a.address.split(',')[0]}</small>
-                      </span>
-                      <ChevronRight size={17} />
-                    </button>
-                  ))}
-              </div>
             </>
           ) : (
             <>
@@ -341,29 +283,20 @@ function BookingScreen({
                   {state.anchors.find((a) => a.id === dropoff)?.name}
                 </div>
                 <button className="text-link" onClick={() => setStep(0)}>
-                  Edit route
+                  Edit details
                 </button>
-              </div>
-              <div className="ride-option selected">
-                <span className="vehicle-symbol">
-                  <CarFront size={40} />
-                </span>
-                <div>
-                  <strong>Kinetic Community</strong>
-                  <p>1 student · reviewed volunteer driver</p>
-                  <small>
-                    {route
-                      ? `${Math.ceil(route.duration / 60)} min drive · ${(route.distance / 1609).toFixed(1)} mi`
-                      : 'Route estimate unavailable'}
-                  </small>
-                </div>
-                <Check size={20} />
               </div>
               <div className="booking-summary">
                 <span>Pickup</span>
                 <strong>
                   {date(new Date(at).toISOString())} ·{' '}
                   {time(new Date(at).toISOString())} CT
+                </strong>
+                <span>Estimated drive</span>
+                <strong>
+                  {route
+                    ? `${Math.ceil(route.duration / 60)} min · ${(route.distance / 1609.344).toFixed(1)} mi`
+                    : 'Unavailable'}
                 </strong>
                 <span>Student</span>
                 <strong>{family?.student}</strong>
@@ -421,8 +354,6 @@ export function TripScreen({
     [tracking, setTracking] = useState<'off' | 'device' | 'simulation'>('off'),
     [gpsMessage, setGpsMessage] = useState(''),
     [clock, setClock] = useState(Date.now());
-  const commitRef = useRef(commit);
-  commitRef.current = commit;
   const simulationPoint = useRef(0);
   const tick = useRef(0);
   const d = ride.driverId
@@ -457,6 +388,7 @@ export function TripScreen({
     try {
       await commit({ op: 'ride.action', id: ride.id, action, ...data });
       setOtp('');
+      if (action === 'complete') navigate('rides', ride.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -609,11 +541,15 @@ export function TripScreen({
         cancelled: 'Ride cancelled',
       };
   const statusLine =
-    ride.status === 'in_progress'
-      ? `To ${dropoff?.name ?? 'your destination'}`
-      : ride.status === 'arrived'
-        ? 'Meet at the agreed pickup point.'
-        : `${date(ride.scheduledAt)} · ${time(ride.scheduledAt)} CT`;
+    ride.status === 'completed'
+      ? ride.completedAt
+        ? `${date(ride.completedAt)} · ${time(ride.completedAt)} CT`
+        : 'Completion time unavailable'
+      : ride.status === 'in_progress'
+        ? `To ${dropoff?.name ?? 'your destination'}`
+        : ride.status === 'arrived'
+          ? 'Meet at the agreed pickup point.'
+          : `${date(ride.scheduledAt)} · ${time(ride.scheduledAt)} CT`;
   return (
     <div className="ride-experience">
       <RideMap
@@ -642,14 +578,15 @@ export function TripScreen({
               <ArrowLeft />
             </button>
             <span className="trip-reference">{ride.id}</span>
-            <button
-              className="help-pill"
-              onClick={() => open({ kind: 'help', ride })}
-              disabled={terminal}
-            >
-              <ShieldCheck size={15} />
-              Help
-            </button>
+            {!terminal && (
+              <button
+                className="help-pill"
+                onClick={() => open({ kind: 'help', ride })}
+              >
+                <ShieldCheck size={15} />
+                Help
+              </button>
+            )}
           </div>
           <div className="trip-headline">
             <div>
@@ -697,13 +634,7 @@ export function TripScreen({
                 <div>
                   <strong>{isDriver ? f?.student : d.name}</strong>
                   <span>
-                    {isDriver ? (
-                      `Guardian: ${f?.guardian}`
-                    ) : d.rating ? (
-                      <>★ {d.rating.toFixed(1)} · Reviewed driver</>
-                    ) : (
-                      'Approved driver'
-                    )}
+                    {isDriver ? `Guardian: ${f?.guardian}` : 'Approved driver'}
                   </span>
                 </div>
               </div>
@@ -723,16 +654,12 @@ export function TripScreen({
               </p>
             </div>
           )}
-          {d && !terminal && !isDriver && (
+          {d && !terminal && (isDriver ? f.phone : d.phone) && (
             <div className="contact-actions">
-              <a href={`tel:${d.phone}`}>
+              <a href={`tel:${isDriver ? f.phone : d.phone}`}>
                 <Phone size={17} />
-                Call driver
+                {isDriver ? 'Call guardian' : 'Call driver'}
               </a>
-              <button onClick={() => open({ kind: 'help', ride })}>
-                <ShieldCheck size={17} />
-                Safety & help
-              </button>
             </div>
           )}
           <div className="compact-route">
@@ -755,19 +682,21 @@ export function TripScreen({
             <div className={`tracking-line ${stale ? 'stale' : ''}`}>
               <Radio size={15} />
               <span>
-                {state.demo
-                  ? ride.locationSource === 'device'
-                    ? 'Device GPS · practice ride'
+                {age === null
+                  ? 'No location shared'
+                  : state.demo
+                    ? ride.locationSource === 'device'
+                      ? 'Device GPS · practice ride'
+                      : stale
+                        ? 'Sample position · test drive stopped'
+                        : 'Test GPS · simulated ride'
                     : stale
-                      ? 'Sample position · test drive stopped'
-                      : 'Test GPS · simulated ride'
-                  : stale
-                    ? 'Driver location not current'
-                    : 'Receiving driver GPS'}
+                      ? 'Driver location not current'
+                      : 'Receiving driver GPS'}
                 <small>
                   {age === null
                     ? 'Waiting for the first location update.'
-                    : `Last update ${age < 60 ? age + ' seconds' : Math.floor(age / 60) + ' minutes'} ago${ride.accuracy ? ` · ±${Math.round(ride.accuracy)} m` : ''}`}
+                    : `${age >= 3600 ? `Last update ${date(ride.locationAt!)} · ${time(ride.locationAt!)} CT` : `Last update ${age < 60 ? age + ' seconds' : Math.floor(age / 60) + ' minutes'} ago`}${ride.accuracy ? ` · ±${Math.round(ride.accuracy)} m` : ''}`}
                 </small>
               </span>
               {!stale && <i className="dot" />}
@@ -991,7 +920,7 @@ export function TripScreen({
               {ride.rating && (
                 <p className="rating-received">
                   {'★'.repeat(ride.rating)}{' '}
-                  <span>{ride.feedback || 'Thanks for the feedback.'}</span>
+                  <span>{ride.feedback || 'Feedback recorded'}</span>
                 </p>
               )}
             </>

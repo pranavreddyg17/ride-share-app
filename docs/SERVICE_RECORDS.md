@@ -18,7 +18,7 @@ This local release adds admin dispatch, a full ride ledger, service-credit revie
 2. Open **Rides** for the full searchable ledger. Filter by scheduled pickup date (Central Time), driver and ride status. Open a ride to see contacts, route snapshots and its timing record.
 3. Open **Service hours** and choose **Review**. Check the arrival, pickup and drop-off timestamps. Approve the suggested minutes, adjust them, or exclude the ride with zero credit. Every review requires a reason. Allowed credit is 0–1,440 whole minutes per completed ride.
 4. Use **Amend** for corrections. **Review history** contains every decision, minutes, reviewer, time and reason. If another admin saves first, close and reopen the review before applying a new decision.
-5. **Reports & exports** downloads an Excel workbook using the selected ride filters. The service-hours screen exports completed rides; the full ledger can include all statuses.
+5. Choose **Export Excel** in **Rides** or **Service hours** to download the currently filtered records. Service hours exports completed rides; Rides can include all statuses. The former Reports page opens the ride ledger.
 
 Only the latest approved decision for each ride contributes to totals. An amendment replaces its previous value; exclusion removes it. Request retries do not create additional credit or history entries. Current credit, the full immutable review snapshot, audit event and idempotency receipt commit in one D1 transaction. A failed history write rolls the whole review back.
 

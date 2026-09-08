@@ -35,8 +35,7 @@ export type Modal =
   | { kind: 'assign' | 'cancel' | 'decline' | 'help' | 'rating'; ride: Ride }
   | { kind: 'resolve'; event: Activity }
   | { kind: 'member' }
-  | { kind: 'member-remove'; email: string }
-  | { kind: 'tour' };
+  | { kind: 'member-remove'; email: string };
 export type Commit = (
   body: Record<string, unknown>,
 ) => Promise<{ message: string; id?: string; version?: number }>;
@@ -103,8 +102,8 @@ export function AppDialog({
           id: '',
           name: '',
           address: '',
-          lat: 33.04,
-          lng: -97.06,
+          lat: Number.NaN,
+          lng: Number.NaN,
           category: 'Community',
           notes: '',
           active: true,
@@ -156,7 +155,6 @@ export function AppDialog({
     resolve: 'Resolve help request',
     member: 'Grant pilot access',
     'member-remove': 'Revoke pilot access',
-    tour: 'Take the pilot for a spin',
   };
   const descriptions = {
     ride: 'Request a ride between community anchor locations. Times are entered in your device’s local time.',
@@ -179,7 +177,6 @@ export function AppDialog({
     resolve: 'Record what happened and how this request was handled.',
     member:
       'Enter the exact email the person uses to sign in. This adds access; it does not send an invitation.',
-    tour: 'Practice mode is separate from your real pilot records. All names, vehicles, and trips are fictional.',
   };
   async function submit(e: React.SubmitEvent) {
     e.preventDefault();
@@ -276,9 +273,6 @@ export function AppDialog({
         case 'member':
           payload = { op: 'member.add', ...member };
           break;
-        case 'tour':
-          close();
-          return;
       }
       await commit(payload);
       close();
@@ -544,9 +538,9 @@ export function AppDialog({
                 step="any"
                 min="-90"
                 max="90"
-                value={anchor.lat}
+                value={Number.isFinite(anchor.lat) ? anchor.lat : ''}
                 onChange={(e) =>
-                  setAnchor({ ...anchor, lat: Number(e.target.value) })
+                  setAnchor({ ...anchor, lat: e.target.valueAsNumber })
                 }
               />
             </Field>
@@ -557,9 +551,9 @@ export function AppDialog({
                 step="any"
                 min="-180"
                 max="180"
-                value={anchor.lng}
+                value={Number.isFinite(anchor.lng) ? anchor.lng : ''}
                 onChange={(e) =>
-                  setAnchor({ ...anchor, lng: Number(e.target.value) })
+                  setAnchor({ ...anchor, lng: e.target.valueAsNumber })
                 }
               />
             </Field>
@@ -718,45 +712,10 @@ export function AppDialog({
           )}
           <div className="notice warning">
             <Info />
-            Access also depends on the site’s audience settings. This private
-            preview is currently visible only to its owner.
+            The participant must also be able to open the site. Granting an
+            account does not change the site’s audience settings.
           </div>
         </>
-      )}
-      {modal.kind === 'tour' && (
-        <ol
-          style={{
-            paddingLeft: 20,
-            display: 'grid',
-            gap: 17,
-            fontSize: 14,
-            lineHeight: 1.7,
-          }}
-        >
-          <li>
-            In <strong>Admin</strong>, schedule a ride for Emma Wilson and
-            assign Aiden Mitchell. Pick a time at least 45 minutes from his
-            other rides.
-          </li>
-          <li>
-            Use the role selector to open <strong>Driver</strong>. Complete the
-            sample active trip, then confirm the new ride and select{' '}
-            <strong>I’ve arrived</strong>.
-          </li>
-          <li>
-            Switch to <strong>Family</strong>, open the ride, and copy its
-            six-digit pickup code.
-          </li>
-          <li>
-            Return to <strong>Driver</strong>, enter that code, then complete
-            the trip. The family can now leave a rating.
-          </li>
-          <li>
-            When ready to set up actual records, open{' '}
-            <strong>Pilot settings → Open real pilot workspace</strong>. It
-            starts empty.
-          </li>
-        </ol>
       )}
       {error && (
         <p className="error-message" role="alert">
@@ -778,21 +737,19 @@ export function AppDialog({
           }
         >
           {busy && <LoaderCircle className="spinner" />}
-          {modal.kind === 'tour'
-            ? 'Got it'
-            : modal.kind === 'ride'
-              ? 'Request ride'
-              : modal.kind === 'help'
-                ? 'Record help request'
-                : modal.kind === 'driver-status'
-                  ? 'Confirm status'
-                  : modal.kind === 'cancel'
-                    ? 'Cancel ride'
-                    : modal.kind === 'member'
-                      ? 'Grant access'
-                      : modal.kind === 'decline'
-                        ? 'Return request'
-                        : 'Save changes'}
+          {modal.kind === 'ride'
+            ? 'Request ride'
+            : modal.kind === 'help'
+              ? 'Record help request'
+              : modal.kind === 'driver-status'
+                ? 'Confirm status'
+                : modal.kind === 'cancel'
+                  ? 'Cancel ride'
+                  : modal.kind === 'member'
+                    ? 'Grant access'
+                    : modal.kind === 'decline'
+                      ? 'Return request'
+                      : 'Save changes'}
         </button>
       </div>
     </form>

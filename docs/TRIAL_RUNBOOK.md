@@ -37,7 +37,7 @@ Configure a scheduler to POST once per minute to `/api/jobs/notifications` with 
 
 The hosting audience is an additional gateway. An owner-only Site may reject a machine scheduler before the app sees its token. Verify access through a supported hosting authentication mechanism; do not copy personal login cookies. A login redirect means the schedule is not operational. Do not broaden the Site audience just to pass this check. If the platform cannot support unattended authenticated access, move the processor to supported scheduled infrastructure before relying on SMS.
 
-In Admin → Pilot settings → Service status, confirm the worker timestamp advances while the app is closed. Test accepted, delivered and undelivered messages. Unknown sends require checking provider logs before any manual resend. New alerts have a separate budget from delivery checks; pending messages expire after 15 minutes to avoid stale alerts.
+In Admin → Settings → Service status, confirm the worker timestamp advances while the app is closed. Test accepted, delivered and undelivered messages. Unknown sends require checking provider logs before any manual resend. New alerts have a separate budget from delivery checks; pending messages expire after 15 minutes to avoid stale alerts.
 
 ## 4. Approved participants
 
@@ -81,7 +81,7 @@ Establish full recovery with the hosting owner and rehearse on non-production da
 
 When the processor runs, it removes request metadata after 7 days, request receipts after 24 hours, notification metadata after 30 days and terminal-ride GPS after 24 hours. Only the latest GPS fix is stored. Participant records and business activity have no automatic deletion. Define retention/deletion for those records, exports and provider records before collecting student information.
 
-Use Admin → Request logs to investigate denied access and errors. Record the request ID when escalating an issue; match it to the business event and platform log. Follow [IAM_AND_AUDIT.md](IAM_AND_AUDIT.md) to configure external log retention, error alerts and the operational review process. Database request logging is best effort; business audit writes are transactional and fail the mutation if they cannot be recorded.
+Use Admin → Settings → Request logs to investigate denied access and errors. Record the request ID when escalating an issue; match it to the business event and platform log. Follow [IAM_AND_AUDIT.md](IAM_AND_AUDIT.md) to configure external log retention, error alerts and the operational review process. Database request logging is best effort; business audit writes are transactional and fail the mutation if they cannot be recorded.
 
 ## Release decision
 

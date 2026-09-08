@@ -53,11 +53,20 @@ test('traffic directions use Mapbox and preserve road geometry and units', async
   assert.deepEqual(result.coordinates, route.routes[0].geometry.coordinates);
 });
 test('practice directions explicitly use OSRM without traffic claims', async () => {
-  const result = await directions(a, b, 'do-not-leak', true, async (url) => {
-    assert.match(url, /router.project-osrm.org/);
-    assert.ok(!url.includes('do-not-leak'));
-    return Response.json(route);
-  });
+  const result = await directions(
+    a,
+    b,
+    'do-not-leak',
+    true,
+    async (url, options) => {
+      assert.match(url, /router.project-osrm.org/);
+      assert.ok(!url.includes('do-not-leak'));
+      // The public practice endpoint rejects Worker requests without an identity.
+      assert.equal(options.headers['User-Agent'], 'KineticYouth/0.1');
+      assert.equal(options.headers.Accept, 'application/json');
+      return Response.json(route);
+    },
+  );
   assert.equal(result.trafficAware, false);
 });
 test('unavailable, malformed and out-of-range routes never fabricate geometry', async () => {

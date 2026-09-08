@@ -20,7 +20,13 @@ type Page = {
   retentionDays: number;
 };
 
-export function AuditLog({ state }: { state: State }) {
+export function AuditLog({
+  state,
+  embedded = false,
+}: {
+  state: State;
+  embedded?: boolean;
+}) {
   const [actorInput, setActorInput] = useState('');
   const [filter, setFilter] = useState({ actor: '', result: 'all' });
   const [cursor, setCursor] = useState('');
@@ -59,10 +65,12 @@ export function AuditLog({ state }: { state: State }) {
   }, [state.demo, filter, cursor, refresh]);
   return (
     <>
-      <Heading
-        title="Request logs"
-        description="Trace access, errors, and response times. Times shown in Central Time."
-      />
+      {!embedded && (
+        <Heading
+          title="Request logs"
+          description="Trace access, errors, and response times. Times shown in Central Time."
+        />
+      )}
       <p className="muted" style={{ marginBottom: 20 }}>
         Request metadata is kept for 7 days. Ride milestones, access changes,
         and service-credit decisions remain in the activity history and records

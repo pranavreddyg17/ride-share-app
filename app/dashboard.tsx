@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { ArrowRight, ArrowUpRight, Plus, Download } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Plus } from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -58,17 +58,13 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
   return (
     <>
       <Heading title="Dispatch" description="North Texas · Central Time">
-        <button className="btn" onClick={() => navigate('reports')}>
-          <Download />
-          Export records
-        </button>
         <button className="btn primary" onClick={() => open({ kind: 'ride' })}>
           <Plus />
           Schedule ride
         </button>
       </Heading>
-      <div className="operations-metrics">
-        <button onClick={() => navigate('rides')}>
+      <div className="operations-metrics" aria-label="Today’s operations">
+        <div>
           <span>Scheduled today</span>
           <strong>
             {
@@ -77,32 +73,23 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
               ).length
             }
           </strong>
-        </button>
-        <button onClick={() => navigate('rides')}>
-          <span>Active rides</span>
+        </div>
+        <div>
+          <span>Confirmed & active</span>
+          <strong>{live.length}</strong>
+        </div>
+        <div>
+          <span>Completed today</span>
           <strong>
-            {live.length}
-            <i className="metric-pulse" />
+            {
+              state.rides.filter(
+                (r) =>
+                  r.completedAt &&
+                  dateKey(r.completedAt) === dateKey(state.serverTime),
+              ).length
+            }
           </strong>
-        </button>
-        <button onClick={() => navigate('rides')}>
-          <span>Need a driver</span>
-          <strong>{matching.length}</strong>
-        </button>
-        <button onClick={() => navigate('hours')}>
-          <span>Hours to review</span>
-          <strong>
-            {review.length}
-            <small>rides</small>
-          </strong>
-        </button>
-        <button onClick={() => navigate('hours')}>
-          <span>Approved service</span>
-          <strong>
-            {(approvedMinutes(state.credits) / 60).toFixed(1)}
-            <small>hr</small>
-          </strong>
-        </button>
+        </div>
       </div>
       <div className="dispatch-layout">
         <section className="dispatch-schedule">
@@ -205,74 +192,84 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
               <ArrowRight size={15} />
             </button>
           </div>
-          <section className="action-register">
-            <div className="section-head">
-              <h2>Needs attention</h2>
-              <span>
-                {matching.length +
-                  review.length +
-                  driverReview.length +
-                  help.length}{' '}
-                items
-              </span>
-            </div>
-            {[
-              {
-                title: 'Unassigned requests',
-                detail: 'Choose a driver for each request',
-                count: matching.length,
-                page: 'rides',
-              },
-              {
-                title: 'Service credit review',
-                detail: 'Arrival-to-drop-off time, including waiting',
-                count: review.length,
-                page: 'hours',
-              },
-              {
-                title: 'Driver applications',
-                detail: 'Review documents and eligibility',
-                count: driverReview.length,
-                page: 'drivers',
-              },
-              {
-                title: 'Open help requests',
-                detail: 'Coordinator follow-up required',
-                count: help.length,
-                page: 'safety',
-              },
-            ].map((item) => (
-              <button
-                className="action-register-row"
-                key={item.page}
-                onClick={() => navigate(item.page)}
-              >
-                <span className="action-count mono">
-                  {String(item.count).padStart(2, '0')}
+          {matching.length + review.length + driverReview.length + help.length >
+            0 && (
+            <section className="action-register">
+              <div className="section-head">
+                <h2>Needs attention</h2>
+                <span>
+                  {matching.length +
+                    review.length +
+                    driverReview.length +
+                    help.length}{' '}
+                  items
                 </span>
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <ArrowUpRight size={18} />
-              </button>
-            ))}
-          </section>
+              </div>
+              {[
+                {
+                  title: 'Unassigned requests',
+                  detail: 'Choose a driver for each request',
+                  count: matching.length,
+                  page: 'rides',
+                },
+                {
+                  title: 'Service credit review',
+                  detail: 'Arrival-to-drop-off time, including waiting',
+                  count: review.length,
+                  page: 'hours',
+                },
+                {
+                  title: 'Driver applications',
+                  detail: 'Review documents and eligibility',
+                  count: driverReview.length,
+                  page: 'drivers',
+                },
+                {
+                  title: 'Open help requests',
+                  detail: 'Coordinator follow-up required',
+                  count: help.length,
+                  page: 'safety',
+                },
+              ]
+                .filter((item) => item.count > 0)
+                .map((item) => (
+                  <button
+                    className="action-register-row"
+                    key={item.page}
+                    onClick={() =>
+                      navigate(
+                        item.page,
+                        item.page === 'rides' ? matching[0]?.id : undefined,
+                      )
+                    }
+                  >
+                    <span className="action-count mono">{item.count}</span>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                    <ArrowUpRight size={18} />
+                  </button>
+                ))}
+            </section>
+          )}
         </section>
         <aside className="dispatch-aside">
           <section className="dispatch-map">
             <div className="section-head">
-              <h2>Active trips</h2>
+              <h2>Trip tracking</h2>
               <span className="mono">
                 {String(live.length).padStart(2, '0')}
               </span>
             </div>
-            <RideMap
-              anchors={state.anchors}
-              ride={selected}
-              demo={state.demo}
-              role={state.role}
-            />
+            {selected && (
+              <RideMap
+                anchors={state.anchors}
+                ride={selected}
+                demo={state.demo}
+                role={state.role}
+              />
+            )}
             <div className="active-trip-list">
               {live.map((ride) => (
                 <button
@@ -316,7 +313,7 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
           </section>
           <section className="service-summary">
             <div className="section-head">
-              <h2>Driver service</h2>
+              <h2>Approved service</h2>
               <button
                 aria-label="Open service hours"
                 className="icon-btn"
@@ -339,9 +336,6 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
                   </strong>
                 </div>
               ))}
-            <p>
-              Approved credit only. Recorded ride time is reviewed separately.
-            </p>
           </section>
         </aside>
       </div>

@@ -404,6 +404,12 @@ await post(admin, {
   action: 'assign',
   driverId: driver.id,
 });
+assert.equal(
+  (await read(driverUser)).families.find((f) => f.id === family.id).phone,
+  '',
+);
+checks++;
+console.log('PASS guardian phone remains private before driver acceptance');
 await post(
   driverUser,
   { op: 'ride.action', id, action: 'verify', otp: '123456' },
@@ -411,6 +417,12 @@ await post(
   'pickup cannot skip arrival',
 );
 await post(driverUser, { op: 'ride.action', id, action: 'accept' });
+assert.equal(
+  (await read(driverUser)).families.find((f) => f.id === family.id).phone,
+  familyData.phone,
+);
+checks++;
+console.log('PASS accepted driver can contact the assigned guardian');
 await post(admin, {
   op: 'driver.status',
   id: driver.id,
@@ -715,6 +727,12 @@ await post(admin, {
   note: 'Test request resolved',
 });
 await post(driverUser, { op: 'ride.action', id, action: 'complete' });
+assert.equal(
+  (await read(driverUser)).families.find((f) => f.id === family.id).phone,
+  '',
+);
+checks++;
+console.log('PASS completed trip removes guardian phone access');
 await post(
   driverUser,
   { op: 'location', id, lat: b.lat, lng: b.lng, accuracy: 8 },

@@ -3,12 +3,10 @@ import Link from 'next/link';
 import { postMutation } from '@/lib/client-api';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, AlertCircle, X, ArrowRight } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Shell } from './shell';
 import { Pick } from './controls';
 import { Dashboard } from './dashboard';
-import { ServiceHours, Reports } from './service-hours';
-import { AuditLog } from './audit';
+import { ServiceHours } from './service-hours';
 import { ConsumerHome } from './consumer';
 import { DriverRegister, FamilyRegister, Anchors } from './registers';
 import { Rides } from './rides';
@@ -65,8 +63,14 @@ export function PilotApp({
       cache: 'no-store',
     });
     const json = (await res.json()) as State & { error?: string };
-    if (!res.ok)
+    if (!res.ok) {
+      if (
+        id === requestId.current &&
+        (res.status === 401 || res.status === 403)
+      )
+        setData(null);
       throw new Error(json.error ?? 'Unable to load your workspace.');
+    }
     if (id === requestId.current) {
       setData(json);
       setError('');
@@ -160,8 +164,45 @@ export function PilotApp({
       : realRole === 'driver'
         ? ['overview', 'rides', 'availability', 'profile', 'safety', 'hours']
         : ['overview', 'rides', 'family', 'anchors', 'safety'];
-  const visiblePage = validPages.includes(page) ? page : 'overview';
+  // Keep old links usable after consolidating exports and diagnostics.
+  const visiblePage = !validPages.includes(page)
+    ? 'overview'
+    : page === 'reports'
+      ? 'rides'
+      : page === 'audit'
+        ? 'settings'
+        : page;
   const props = data ? { state: data, open: setModal, navigate } : null;
+  if (!data)
+    return (
+      <main className="session-screen">
+        <div>
+          <span className="brand-mark">ky.</span>
+          <h1>
+            {error || offline ? 'Workspace unavailable' : 'Opening workspace'}
+          </h1>
+          <p role={error || offline ? 'alert' : 'status'}>
+            {offline
+              ? 'Reconnect to load your workspace.'
+              : error || 'Checking access and loading records…'}
+          </p>
+          {(error || offline) && (
+            <div className="actions">
+              <button
+                className="btn primary"
+                onClick={() => fetchState().catch((e) => setError(e.message))}
+              >
+                Try again
+              </button>
+              <Link className="btn" href="/login">
+                Account & sign-in
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          )}
+        </div>
+      </main>
+    );
   return (
     <Shell
       page={visiblePage}
@@ -169,9 +210,6 @@ export function PilotApp({
       name={data?.name ?? 'Your workspace'}
       role={realRole}
       demo={demo}
-      completed={
-        data?.rides.filter((r) => r.status === 'completed').length ?? 0
-      }
       counts={{
         rides: data?.rides.filter((r) => r.status === 'pending').length ?? 0,
         drivers: data?.drivers.filter((d) => d.status === 'review').length ?? 0,
@@ -233,31 +271,9 @@ export function PilotApp({
               >
                 Try again
               </button>
-              {!data && (
-                <Link className="btn small" href="/login">
-                  Sign in / account options
-                  <ArrowRight />
-                </Link>
-              )}
             </div>
           </div>
         </div>
-      )}
-      {!data && !error && (
-        <>
-          <div className="page-heading">
-            <div>
-              <h1>Loading workspace</h1>
-              <p>Retrieving records…</p>
-            </div>
-          </div>
-          <div className="stats">
-            {[0, 1, 2, 3].map((n) => (
-              <Skeleton key={n} className="h-32 rounded-xl" />
-            ))}
-          </div>
-          <Skeleton className="h-96 w-full rounded-xl" />
-        </>
       )}
       {props && (
         <>
@@ -281,13 +297,16 @@ export function PilotApp({
           )}{' '}
           {visiblePage === 'profile' && <DriverProfile {...props} />}{' '}
           {visiblePage === 'settings' && (
-            <Settings {...props} commit={commit} />
+            <Settings
+              key={page}
+              {...props}
+              commit={commit}
+              initialTab={page === 'audit' ? 'logs' : 'general'}
+            />
           )}
           {visiblePage === 'hours' && (
             <ServiceHours {...props} commit={commit} />
           )}
-          {visiblePage === 'reports' && <Reports {...props} />}
-          {visiblePage === 'audit' && <AuditLog state={data!} />}
         </>
       )}
       {modal && data && (

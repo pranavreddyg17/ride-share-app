@@ -587,6 +587,15 @@ export async function state(c: Context): Promise<State> {
     );
   const driverIds = new Set(visibleRides.map((r) => r.driverId));
   const familyIds = new Set(visibleRides.map((r) => r.familyId));
+  const contactableFamilies = new Set(
+    visibleRides
+      .filter(
+        (r) =>
+          r.driverId === c.recordId &&
+          ['accepted', 'arrived', 'in_progress'].includes(r.status),
+      )
+      .map((r) => r.familyId),
+  );
   const visibleDrivers = drivers
     .filter(
       (d) =>
@@ -647,7 +656,13 @@ export async function state(c: Context): Promise<State> {
       )
       .map((f) =>
         c.role === 'driver'
-          ? { ...f, email: '', notes: '', emergency: '', phone: '' }
+          ? {
+              ...f,
+              email: '',
+              notes: '',
+              emergency: '',
+              phone: contactableFamilies.has(f.id) ? f.phone : '',
+            }
           : f,
       ),
     rides: visibleRides
@@ -1078,7 +1093,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       r.id,
     );
     return {
-      message: 'Ride requested. You can follow its status in My rides.',
+      message: 'Ride requested.',
       id: r.id,
     };
   }
