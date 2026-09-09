@@ -66,12 +66,13 @@ export const GET = withApiLog(async function GET(req: Request) {
         413,
         'Limit the date range to 1,000 rides per workbook.',
       );
+    const selectedIds = JSON.stringify(rides.map((ride) => ride.id));
     if (c.role === 'admin') {
       const rows = await db()
         .prepare(
-          'SELECT * FROM events WHERE workspace=? AND ride_id IS NOT NULL ORDER BY created_at',
+          'SELECT * FROM events WHERE workspace=? AND ride_id IN (SELECT value FROM json_each(?)) ORDER BY created_at',
         )
-        .bind(c.workspace)
+        .bind(c.workspace, selectedIds)
         .all<{
           id: string;
           ride_id: string;
@@ -110,9 +111,9 @@ export const GET = withApiLog(async function GET(req: Request) {
     }
     const history = await db()
       .prepare(
-        "SELECT data FROM records WHERE workspace=? AND kind='credit_reviews' ORDER BY json_extract(data,'$.reviewedAt'),json_extract(data,'$.revision')",
+        "SELECT data FROM records WHERE workspace=? AND kind='credit_reviews' AND json_extract(data,'$.rideId') IN (SELECT value FROM json_each(?)) ORDER BY json_extract(data,'$.reviewedAt'),json_extract(data,'$.revision')",
       )
-      .bind(c.workspace)
+      .bind(c.workspace, selectedIds)
       .all<{ data: string }>();
     const rideIds = new Set(rides.map((r) => r.id));
     const reviews = history.results
@@ -136,7 +137,14 @@ export const GET = withApiLog(async function GET(req: Request) {
     const bytes = await reportWorkbook(
       snapshot,
       rides,
-      `${filters.from || 'All dates'} – ${filters.to || 'present'}`,
+      `${filters.from || 'All dates'} – ${filters.to || 'present'}` +
+        Object.entries(filters)
+          .filter(
+            ([key, value]) =>
+              !['from', 'to'].includes(key) && value && value !== 'all',
+          )
+          .map(([key, value]) => ` · ${key}: ${value}`)
+          .join(''),
       reviews,
     );
     return new Response(bytes.buffer as ArrayBuffer, {
@@ -150,6 +158,35 @@ export const GET = withApiLog(async function GET(req: Request) {
       },
     });
   } catch (e) {
+    if (new URL(req.url).searchParams.get('download') === '1') {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : 'The workbook could not be generated. Try a smaller date range.';
+      const safeMessage = message.replace(
+        /[&<>"']/g,
+        (character) =>
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          })[character]!,
+      );
+      // A native file request stays on the current page on success. On failure,
+      // give the user a readable recovery page instead of raw API JSON.
+      return new Response(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Export unavailable · Kinetic Youth</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:10vh auto;padding:24px;max-width:480px;color:#171717}h1{font-size:28px}a{color:inherit;display:inline-block;margin-top:20px}</style></head><body><main><h1>Export unavailable</h1><p>${safeMessage}</p><a href="/login">Return to your workspace</a></main></body></html>`,
+        {
+          status: e instanceof ApiError ? e.status : 500,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+          },
+        },
+      );
+    }
     return Response.json(
       {
         error:

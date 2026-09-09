@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/empty';
 import { Search, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { cloneElement, isValidElement, useId } from 'react';
 export function Pick({
   value,
   onChange,
@@ -56,12 +57,20 @@ export function Field({
   children: ReactNode;
   hint?: string;
 }) {
+  const generatedId = useId();
+  const native =
+    isValidElement<{ id?: string }>(children) &&
+    typeof children.type === 'string' &&
+    ['input', 'textarea', 'select'].includes(children.type);
+  const inputId = native ? (children.props.id ?? generatedId) : undefined;
   return (
     <div className="field">
-      <label>
-        {label}
-        {children}
-      </label>
+      {native ? (
+        <label htmlFor={inputId}>{label}</label>
+      ) : (
+        <span className="field-label">{label}</span>
+      )}
+      {native ? cloneElement(children, { id: inputId }) : children}
       {hint && <small>{hint}</small>}
     </div>
   );

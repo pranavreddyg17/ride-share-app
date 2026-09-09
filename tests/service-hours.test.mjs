@@ -6,6 +6,9 @@ import {
   approvedMinutes,
   filterRides,
   creditState,
+  reportFacts,
+  summarizeFacts,
+  groupFacts,
 } from '../lib/service-hours.ts';
 
 test('suggested service includes waiting from actual pickup arrival through drop-off', () => {
@@ -22,6 +25,61 @@ test('suggested service includes waiting from actual pickup arrival through drop
     service: 30,
     suggested: 30,
   });
+});
+
+test('reporting facts reconcile across month boundaries and keep missing time distinct from zero', () => {
+  const rides = [
+    {
+      id: 'one',
+      driverId: 'a',
+      scheduledAt: '2026-10-01T04:59:59Z',
+      status: 'completed',
+      arrivedAt: '2026-10-01T04:00:00Z',
+      startedAt: '2026-10-01T04:10:00Z',
+      completedAt: '2026-10-01T04:30:00Z',
+      driverSnapshot: { name: 'Original name', school: 'Original school' },
+    },
+    {
+      id: 'two',
+      driverId: 'a',
+      scheduledAt: '2026-10-01T05:00:00Z',
+      status: 'completed',
+      completionMethod: 'coordinator_verified',
+    },
+    {
+      id: 'three',
+      driverId: 'b',
+      scheduledAt: '2026-10-01T05:00:00Z',
+      status: 'cancelled',
+    },
+  ];
+  const state = {
+    drivers: [{ id: 'a', name: 'Updated name' }],
+    credits: [
+      { rideId: 'one', status: 'approved', minutes: 35 },
+      { rideId: 'three', status: 'approved', minutes: 100 },
+    ],
+  };
+  const facts = reportFacts(state, rides);
+  assert.equal(facts[0].driver, 'Original name');
+  assert.equal(facts[0].month, '2026-09');
+  assert.equal(facts[1].month, '2026-10');
+  assert.equal(facts[1].serviceMinutes, null);
+  const totals = summarizeFacts(facts);
+  assert.equal(totals.approvedMinutes, 35);
+  assert.equal(totals.needsReview, 1);
+  assert.equal(totals.coordinatorCompletion, 1);
+  assert.equal(totals.missingServiceTime, 1);
+  assert.equal(totals.cancelled, 1);
+  assert.equal(totals.waitingMinutes, 10);
+  assert.equal(
+    groupFacts(facts, 'date').reduce((n, g) => n + g.approvedMinutes, 0),
+    totals.approvedMinutes,
+  );
+  assert.equal(
+    groupFacts(facts, 'driverId').reduce((n, g) => n + g.completed, 0),
+    totals.completed,
+  );
 });
 test('rounding is applied once to service duration, not to each leg', () => {
   const ride = {

@@ -2,17 +2,14 @@
 import Link from 'next/link';
 import {
   Clock as ClockIcon,
-  LayoutDashboard,
-  Route,
   CarFront,
   Users,
-  MapPin,
-  ShieldCheck,
-  Settings2,
   ChevronRight,
   GraduationCap,
   CircleUserRound,
+  CalendarDays,
 } from 'lucide-react';
+import { ADMIN_NAV } from '@/lib/navigation';
 import {
   Sidebar,
   SidebarProvider,
@@ -27,16 +24,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import type { ReactNode } from 'react';
-export const sections = [
-  { id: 'overview', label: 'Dispatch', icon: LayoutDashboard },
-  { id: 'rides', label: 'Rides', icon: Route },
-  { id: 'drivers', label: 'Drivers', icon: CarFront },
-  { id: 'families', label: 'Families', icon: Users },
-  { id: 'anchors', label: 'Locations', icon: MapPin },
-  { id: 'safety', label: 'Help & activity', icon: ShieldCheck },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
-  { id: 'hours', label: 'Service hours', icon: GraduationCap },
-];
+export const sections = ADMIN_NAV;
 export function Brand() {
   return (
     <div className="brand">
@@ -89,34 +77,38 @@ function Navigation({
   counts: Record<string, number>;
 }) {
   const { setOpenMobile } = useSidebar();
-  const opts = [
-    'overview',
-    'rides',
-    'hours',
-    'drivers',
-    'families',
-    'anchors',
-    'safety',
-    'settings',
-  ].map((id) => sections.find((section) => section.id === id)!);
   return (
-    <SidebarMenu className="nav-items">
-      {opts.map((s) => (
-        <SidebarMenuItem key={s.id}>
-          <SidebarMenuButton
-            isActive={page === s.id}
-            onClick={() => {
-              onNavigate(s.id);
-              setOpenMobile(false);
-            }}
-          >
-            <s.icon />
-            <span>{s.label}</span>
-            {!!counts[s.id] && <b className="nav-badge">{counts[s.id]}</b>}
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+    <nav aria-label="Coordinator navigation">
+      {['Operations', 'Registers', 'Workspace'].map((group) => (
+        <div className="nav-section" key={group}>
+          <p className="nav-section-label">{group}</p>
+          <SidebarMenu className="nav-items">
+            {sections
+              .filter((s) => s.group === group)
+              .map((s) => (
+                <SidebarMenuItem key={s.id}>
+                  <SidebarMenuButton
+                    isActive={page === s.id}
+                    aria-current={page === s.id ? 'page' : undefined}
+                    onClick={() => {
+                      onNavigate(s.id);
+                      setOpenMobile(false);
+                    }}
+                  >
+                    <span className="nav-index" aria-hidden="true">
+                      {s.code}
+                    </span>
+                    <span>{s.label}</span>
+                    {!!counts[s.id] && (
+                      <b className="nav-badge">{counts[s.id]}</b>
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+          </SidebarMenu>
+        </div>
       ))}
-    </SidebarMenu>
+    </nav>
   );
 }
 export function Shell({
@@ -157,7 +149,7 @@ export function Shell({
                   {
                     id: 'availability',
                     label: 'Availability',
-                    I: GraduationCap,
+                    I: CalendarDays,
                   },
                   { id: 'profile', label: 'Account', I: Users },
                   { id: 'hours', label: 'Service hours', I: GraduationCap },
@@ -171,6 +163,7 @@ export function Shell({
               <button
                 key={n.id}
                 className={page === n.id ? 'active' : ''}
+                aria-current={page === n.id ? 'page' : undefined}
                 onClick={() => onNavigate(n.id)}
               >
                 <n.I size={17} />

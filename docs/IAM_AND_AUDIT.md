@@ -1,6 +1,6 @@
 # Identity, permissions and audit records
 
-This is the local pilot implementation. No hosting settings or deployed resources were changed by this release.
+The existing Site is publicly reachable, while participant records require approved application membership. The prepared architecture/completion update does not change the hosting audience.
 
 ## Identity and account lifecycle
 
@@ -19,6 +19,8 @@ Practice data belongs to `practice:<verified user ID>`. Role switching operates 
 The interface waits for verified workspace data before displaying role navigation. A 401 or 403 on a later state refresh clears the loaded records and shows the account/access screen; the server remains the enforcement boundary.
 
 An assigned driver receives the guardian phone only while their trip is accepted, at pickup, or in progress. Pending assignments and completed/cancelled trips do not expose that number unless another accepted or active trip connects the same driver and family. Guardian email, notes and emergency contacts remain admin/family-only. The driver screen offers a call link for this limited contact window.
+
+Families receive the driver's phone under the same relationship window. Detailed completion evidence (recorder email, exception reason and GPS quality) is admin-only; driver/family views retain the completion method and time. API writes also reject cross-site Fetch Metadata when an Origin header is absent.
 
 ## API permissions
 

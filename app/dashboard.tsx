@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from './shell';
 import { RideMap } from './ride-map';
-import { type State, time, dateKey, active } from '@/lib/types';
+import { type State, time, dateKey } from '@/lib/types';
 import { approvedMinutes, durationLabel } from '@/lib/service-hours';
 import type { Modal } from './dialogs';
 export type ViewProps = {
@@ -44,7 +44,9 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
   const schedule = state.rides
     .filter((r) => dateKey(r.scheduledAt) === day)
     .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-  const live = state.rides.filter((r) => active(r.status));
+  const live = state.rides.filter((r) =>
+    ['arrived', 'in_progress'].includes(r.status),
+  );
   const matching = state.rides.filter(
     (r) => r.status === 'pending' && !r.driverId,
   );
@@ -69,13 +71,15 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
           <strong>
             {
               state.rides.filter(
-                (r) => dateKey(r.scheduledAt) === dateKey(state.serverTime),
+                (r) =>
+                  r.status !== 'cancelled' &&
+                  dateKey(r.scheduledAt) === dateKey(state.serverTime),
               ).length
             }
           </strong>
         </div>
         <div>
-          <span>Confirmed & active</span>
+          <span>Trips underway now</span>
           <strong>{live.length}</strong>
         </div>
         <div>
@@ -84,6 +88,7 @@ export function Dashboard({ state, open, navigate }: ViewProps) {
             {
               state.rides.filter(
                 (r) =>
+                  r.status === 'completed' &&
                   r.completedAt &&
                   dateKey(r.completedAt) === dateKey(state.serverTime),
               ).length

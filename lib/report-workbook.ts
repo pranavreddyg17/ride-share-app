@@ -1,6 +1,13 @@
 import ExcelJS from 'exceljs';
 import type { State, Ride, ServiceCredit } from './types';
-import { rideTiming, approvedMinutes, creditState } from './service-hours';
+import {
+  rideTiming,
+  approvedMinutes,
+  creditState,
+  reportFacts,
+  groupFacts,
+} from './service-hours';
+import { completionLabel } from './ride-completion';
 type Value = string | number | boolean | Date | null;
 type Column = { name: string; width: number; format?: string };
 // Excel dates have no timezone. Encode Central wall-clock values and label them CT.
@@ -199,6 +206,17 @@ export async function reportWorkbook(
     { name: 'Reviewed at (CT)', width: 23, format: stamp },
     { name: 'Review note', width: 45 },
     { name: 'Drop-off evidence', width: 28 },
+    ...(admin
+      ? [
+          { name: 'Completion recorded by', width: 32 },
+          { name: 'Completion recorded at (CT)', width: 25, format: stamp },
+          { name: 'Drop-off verified with', width: 25 },
+          { name: 'Completion exception reason', width: 50 },
+          { name: 'GPS accuracy (meters)', width: 22 },
+          { name: 'GPS distance from destination (meters)', width: 25 },
+          { name: 'GPS captured at (UTC ISO)', width: 29 },
+        ]
+      : []),
     { name: 'Cancellation reason', width: 40 },
     { name: 'Scheduled pickup (UTC ISO)', width: 29 },
     { name: 'Arrival (UTC ISO)', width: 29 },
@@ -246,11 +264,18 @@ export async function reportWorkbook(
         c?.reviewedBy ?? '',
         centralDate(c?.reviewedAt),
         c?.reason ?? '',
-        r.completionMethod === 'coordinator_verified'
-          ? 'Coordinator verified exception'
-          : r.completionMethod === 'driver_gps'
-            ? 'Driver device GPS'
-            : 'Historical record: not captured',
+        completionLabel(r),
+        ...(admin
+          ? [
+              r.completion?.recordedBy ?? '',
+              centralDate(r.completion?.recordedAt),
+              r.completion?.verifiedWith ?? '',
+              r.completion?.reason ?? '',
+              r.completion?.gps?.accuracy ?? null,
+              r.completion?.gps?.distanceMeters ?? null,
+              r.completion?.gps?.capturedAt ?? '',
+            ]
+          : []),
         r.cancelReason,
         r.scheduledAt,
         r.arrivedAt ?? '',
@@ -293,6 +318,137 @@ export async function reportWorkbook(
       ]),
   );
   if (admin) {
+    const facts = reportFacts(state, rides);
+    sheet(
+      'Daily totals',
+      [
+        { name: 'Scheduled pickup date (CT)', width: 28 },
+        { name: 'Rides', width: 14 },
+        { name: 'Completed', width: 14 },
+        { name: 'Cancelled', width: 14 },
+        { name: 'Needs review', width: 18 },
+        { name: 'Excluded', width: 14 },
+        { name: 'Missing service time', width: 24 },
+        { name: 'Coordinator completions', width: 25 },
+        { name: 'Waiting minutes', width: 20, format: number },
+        { name: 'Driving minutes', width: 20, format: number },
+        { name: 'Recorded service minutes', width: 26, format: number },
+        { name: 'Approved credit minutes', width: 26 },
+        { name: 'Approved service hours', width: 26, format: number },
+      ],
+      groupFacts(facts, 'date').map((f) => [
+        f.key,
+        f.rides,
+        f.completed,
+        f.cancelled,
+        f.needsReview,
+        f.excluded,
+        f.missingServiceTime,
+        f.coordinatorCompletion,
+        f.waitingMinutes,
+        f.drivingMinutes,
+        f.serviceMinutes,
+        f.approvedMinutes,
+        f.approvedHours,
+      ]),
+    );
+    sheet(
+      'Analysis data',
+      [
+        { name: 'Ride ID', width: 20 },
+        { name: 'Scheduled date CT', width: 22 },
+        { name: 'Month CT', width: 15 },
+        { name: 'Driver ID', width: 38 },
+        { name: 'Driver at assignment', width: 26 },
+        { name: 'School at assignment', width: 28 },
+        { name: 'Ride status', width: 18 },
+        { name: 'Completed count', width: 20 },
+        { name: 'Cancelled count', width: 20 },
+        { name: 'Needs review count', width: 22 },
+        { name: 'Excluded count', width: 18 },
+        { name: 'Missing service time count', width: 27 },
+        { name: 'Coordinator completion count', width: 30 },
+        { name: 'Waiting minutes', width: 20, format: number },
+        { name: 'Driving minutes', width: 20, format: number },
+        { name: 'Recorded service minutes', width: 27, format: number },
+        { name: 'Approved credit minutes', width: 26 },
+        { name: 'Approved service hours', width: 26, format: number },
+      ],
+      facts.map((f) => [
+        f.rideId,
+        f.date,
+        f.month,
+        f.driverId,
+        f.driver,
+        f.school,
+        f.status,
+        f.completed,
+        f.cancelled,
+        f.needsReview,
+        f.excluded,
+        f.missingServiceTime,
+        f.coordinatorCompletion,
+        f.waitingMinutes,
+        f.drivingMinutes,
+        f.serviceMinutes,
+        f.approvedMinutes,
+        f.approvedHours,
+      ]),
+    );
+    sheet(
+      'Report guide',
+      [
+        { name: 'Field or table', width: 35 },
+        { name: 'Definition', width: 110 },
+      ],
+      [
+        [
+          'Report scope',
+          period +
+            '. All ride tables use the selected scheduled pickup dates in America/Chicago, inclusive. Driver, status, review, and search filters also apply.',
+        ],
+        [
+          'Analysis data',
+          'One row per selected ride. Use this Excel table for PivotTables or Power BI. Sum the numeric count, minute, and hour columns. Do not append Credit reviews to this table.',
+        ],
+        [
+          'Daily totals',
+          'Aggregated from the same selected rides as Analysis data, grouped by scheduled pickup date in Central Time.',
+        ],
+        [
+          'Approved service hours',
+          'Current approved credit minutes divided by 60. Pending and excluded rides contribute zero. Credit review revisions are history, not extra hours.',
+        ],
+        [
+          'Recorded service minutes',
+          'Elapsed time from actual arrival at pickup through drop-off, including waiting. Blank means unavailable, not zero.',
+        ],
+        [
+          'Missing service time count',
+          'Completed rides with missing, invalid, or reversed arrival/drop-off timestamps. Daily sums use known durations only; check this count before relying on recorded-time totals.',
+        ],
+        [
+          'Completion evidence',
+          'Driver GPS, coordinator verified exception, practice confirmation, or uncaptured historical evidence. Coordinator exceptions have separate recorded time, verifier, and reason.',
+        ],
+        [
+          'Date handling',
+          'CT columns contain Excel wall-clock dates for reading. UTC ISO columns preserve unambiguous instants, including daylight saving transitions.',
+        ],
+        [
+          'Driver identity',
+          'Driver ID remains stable. Assignment name and school use the ride snapshot when available. Driver summary and register show current profile details.',
+        ],
+        [
+          'Registers',
+          'Current profiles of the drivers, families, and meeting points associated with selected rides. Use the register screens to export people without rides.',
+        ],
+        [
+          'Privacy',
+          'The workbook contains participant records. Share only with people authorized to receive them. Analysis data omits student names and guardian contact details.',
+        ],
+      ],
+    );
     sheet(
       'Activity',
       [

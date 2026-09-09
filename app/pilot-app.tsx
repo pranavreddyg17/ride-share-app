@@ -13,6 +13,7 @@ import { Rides } from './rides';
 import { Safety, Availability, DriverProfile, Settings } from './operations';
 import { AppDialog, type Modal } from './dialogs';
 import type { State, Role } from '@/lib/types';
+import { visiblePage as resolvePage } from '@/lib/navigation';
 export function PilotApp({
   initialPage = 'overview',
   initialRide,
@@ -147,31 +148,7 @@ export function PilotApp({
     return () => clearTimeout(timeout);
   }, [message]);
   const realRole = data?.role ?? role;
-  const validPages =
-    realRole === 'admin'
-      ? [
-          'overview',
-          'rides',
-          'drivers',
-          'families',
-          'anchors',
-          'safety',
-          'settings',
-          'hours',
-          'reports',
-          'audit',
-        ]
-      : realRole === 'driver'
-        ? ['overview', 'rides', 'availability', 'profile', 'safety', 'hours']
-        : ['overview', 'rides', 'family', 'anchors', 'safety'];
-  // Keep old links usable after consolidating exports and diagnostics.
-  const visiblePage = !validPages.includes(page)
-    ? 'overview'
-    : page === 'reports'
-      ? 'rides'
-      : page === 'audit'
-        ? 'settings'
-        : page;
+  const visiblePage = resolvePage(page, realRole);
   const props = data ? { state: data, open: setModal, navigate } : null;
   if (!data)
     return (

@@ -165,6 +165,16 @@ const fullWeek = Array.from({ length: 7 }, (_, day) => ({
   start: '00:00',
   end: '23:59',
 }));
+expect(
+  await req(
+    admin,
+    undefined,
+    { op: 'settings' },
+    { 'Sec-Fetch-Site': 'cross-site' },
+  ),
+  403,
+  'cross-site browser metadata rejects writes even without an Origin header',
+);
 const profile = {
   name: 'Test Driver ' + run,
   email: driverUser.email,
@@ -410,6 +420,12 @@ assert.equal(
 );
 checks++;
 console.log('PASS guardian phone remains private before driver acceptance');
+assert.equal(
+  (await read(familyUser)).drivers.find((d) => d.id === driver.id).phone,
+  '',
+);
+checks++;
+console.log('PASS driver phone remains private before acceptance');
 await post(
   driverUser,
   { op: 'ride.action', id, action: 'verify', otp: '123456' },
@@ -423,6 +439,12 @@ assert.equal(
 );
 checks++;
 console.log('PASS accepted driver can contact the assigned guardian');
+assert.equal(
+  (await read(familyUser)).drivers.find((d) => d.id === driver.id).phone,
+  profile.phone,
+);
+checks++;
+console.log('PASS family can contact its accepted driver');
 await post(admin, {
   op: 'driver.status',
   id: driver.id,
@@ -733,6 +755,23 @@ assert.equal(
 );
 checks++;
 console.log('PASS completed trip removes guardian phone access');
+assert.equal(
+  (await read(familyUser)).drivers.find((d) => d.id === driver.id).phone,
+  '',
+);
+checks++;
+console.log('PASS completed trip removes driver phone access');
+const gpsCompletion = (await read(admin)).rides.find((r) => r.id === id);
+assert.equal(gpsCompletion.completionMethod, 'driver_gps');
+assert.equal(gpsCompletion.completion.recordedBy, driverUser.email);
+assert.equal(gpsCompletion.completion.gps.accuracy, 8);
+assert.ok(gpsCompletion.completion.gps.distanceMeters <= 200);
+assert.ok(
+  gpsCompletion.completion.gps.capturedAt <=
+    gpsCompletion.completion.recordedAt,
+);
+checks++;
+console.log('PASS driver completion retains bounded GPS evidence and recorder');
 await post(
   driverUser,
   { op: 'location', id, lat: b.lat, lng: b.lng, accuracy: 8 },
@@ -799,6 +838,8 @@ const recoveryPayload = {
   action: 'admin-complete',
   completedAt: new Date().toISOString(),
   reason: 'Driver phone could not obtain a destination GPS fix.',
+  verifiedWith: 'guardian',
+  confirmed: true,
 };
 await post(
   driverUser,
@@ -821,13 +862,75 @@ await post(
   400,
   'coordinator recovery rejects a drop-off before pickup verification',
 );
-await post(admin, recoveryPayload);
+for (const [extra, label] of [
+  [
+    { completedAt: new Date(Date.now() + 30000).toISOString() },
+    'rejects a drop-off even 30 seconds in the future',
+  ],
+  [
+    { completedAt: '2026-02-30T10:00:00Z' },
+    'rejects impossible calendar dates',
+  ],
+  [
+    { completedAt: '2026-09-09T24:00:00Z' },
+    'rejects midnight rollover notation',
+  ],
+  [{ confirmed: false }, 'requires an explicit arrival confirmation'],
+  [{ verifiedWith: '' }, 'requires a verification source'],
+  [{ reason: 'short' }, 'requires a meaningful exception reason'],
+])
+  await post(
+    admin,
+    { ...recoveryPayload, ...extra },
+    400,
+    'coordinator recovery ' +
+      (typeof label === 'string' ? label : 'invalid input'),
+  );
+const recoveryKey = crypto.randomUUID();
+const recoveryAttempts = await Promise.all([
+  req(admin, undefined, recoveryPayload, { 'Idempotency-Key': recoveryKey }),
+  req(admin, undefined, recoveryPayload, { 'Idempotency-Key': recoveryKey }),
+]);
+expect(recoveryAttempts[0], 200, 'coordinator completion saved');
+expect(
+  recoveryAttempts[1],
+  200,
+  'concurrent coordinator completion retry replays result',
+);
+await post(
+  admin,
+  recoveryPayload,
+  409,
+  'completed ride cannot be closed again with a new request',
+);
 const recoveredRideState = await read(admin);
 const recoveredRide = recoveredRideState.rides.find(
   (ride) => ride.id === recoveryId,
 );
 assert.equal(recoveredRide.status, 'completed');
 assert.equal(recoveredRide.completionMethod, 'coordinator_verified');
+assert.equal(recoveredRide.completion.recordedBy, admin.email);
+assert.equal(recoveredRide.completion.verifiedWith, 'guardian');
+assert.equal(recoveredRide.completion.reason, recoveryPayload.reason);
+assert.ok(recoveredRide.completion.recordedAt >= recoveredRide.completedAt);
+assert.equal(recoveredRide.completion.gps, undefined);
+assert.equal(
+  (await read(familyUser)).rides.find((ride) => ride.id === recoveryId)
+    .completion,
+  undefined,
+);
+assert.equal(
+  (await read(driverUser)).rides.find((ride) => ride.id === recoveryId)
+    .completion,
+  undefined,
+);
+assert.equal(
+  recoveredRideState.events.filter(
+    (entry) =>
+      entry.rideId === recoveryId && entry.action === 'ride.admin-complete',
+  ).length,
+  1,
+);
 assert.ok(
   recoveredRideState.events.some(
     (entry) =>
@@ -1011,6 +1114,7 @@ const additionalCreditChecks = await creditChecks({
   driver,
   id,
   forbiddenRide: unassignedTestRide.id,
+  recoveryId,
 });
 checks += additionalCreditChecks;
 const endpointAuditChecks = await endpointChecks({
@@ -1036,6 +1140,27 @@ const strangerPractice = expect(
 assert.ok(!strangerPractice.rides.some((r) => r.id === id));
 checks++;
 console.log('PASS practice namespace excludes real ride data');
+const practiceDownloadRole = expect(
+  await req(stranger, '/api/state?mode=practice&viewAs=driver'),
+  200,
+  'native practice query selects a role inside the private rehearsal',
+);
+assert.equal(practiceDownloadRole.role, 'driver');
+assert.equal(practiceDownloadRole.recordId, 'd1');
+const pilotQueryRole = expect(
+  await req(driverUser, '/api/state?mode=pilot&viewAs=admin'),
+  200,
+  'pilot membership ignores a role query parameter',
+);
+assert.equal(pilotQueryRole.role, 'driver');
+const practiceHeaderRole = expect(
+  await req(stranger, '/api/state?mode=practice&viewAs=admin', undefined, {
+    'x-ky-role': 'family',
+  }),
+  200,
+  'explicit practice role header takes precedence over the download preference',
+);
+assert.equal(practiceHeaderRole.role, 'family');
 expect(
   await req(stranger, `/api/route?mode=pilot&id=${id}`),
   403,

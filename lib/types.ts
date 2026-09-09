@@ -83,7 +83,15 @@ export interface Ride {
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
-  completionMethod?: 'driver_gps' | 'coordinator_verified' | null;
+  completionMethod?: 'driver_gps' | 'coordinator_verified' | 'practice' | null;
+  /** Immutable completion evidence, visible only to coordinators. */
+  completion?: {
+    recordedAt: string;
+    recordedBy: string;
+    verifiedWith?: 'driver' | 'guardian' | 'in_person';
+    reason?: string;
+    gps?: { capturedAt: string; accuracy: number; distanceMeters: number };
+  };
   acceptedAt?: string | null;
   arrivedAt?: string | null;
   cancelledAt?: string | null;

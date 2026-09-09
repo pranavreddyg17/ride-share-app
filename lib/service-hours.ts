@@ -82,3 +82,106 @@ export function filterRides(state: State, filters: ReportFilters) {
     })
     .sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
 }
+
+export type ReportFact = {
+  rideId: string;
+  date: string;
+  month: string;
+  driverId: string;
+  driver: string;
+  school: string;
+  status: Ride['status'];
+  completed: number;
+  cancelled: number;
+  needsReview: number;
+  excluded: number;
+  missingServiceTime: number;
+  coordinatorCompletion: number;
+  waitingMinutes: number | null;
+  drivingMinutes: number | null;
+  serviceMinutes: number | null;
+  approvedMinutes: number;
+  approvedHours: number;
+};
+
+/** One row per ride; review revisions never multiply approved service totals. */
+export function reportFacts(state: State, rides: Ride[]): ReportFact[] {
+  const dates = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const credits = new Map(state.credits.map((c) => [c.rideId, c]));
+  const drivers = new Map(state.drivers.map((d) => [d.id, d]));
+  return rides.map((ride) => {
+    const completed = ride.status === 'completed';
+    const credit = completed ? credits.get(ride.id) : undefined;
+    const driver = ride.driverSnapshot ?? drivers.get(ride.driverId ?? '');
+    const timing = rideTiming(ride);
+    const date = dates.format(new Date(ride.scheduledAt));
+    const approved = credit?.status === 'approved' ? credit.minutes : 0;
+    return {
+      rideId: ride.id,
+      date,
+      month: date.slice(0, 7),
+      driverId: ride.driverId ?? '',
+      driver: driver?.name ?? 'Unassigned',
+      school: driver?.school ?? '',
+      status: ride.status,
+      completed: Number(completed),
+      cancelled: Number(ride.status === 'cancelled'),
+      needsReview: Number(completed && !credit),
+      excluded: Number(credit?.status === 'excluded'),
+      missingServiceTime: Number(completed && timing.service === null),
+      coordinatorCompletion: Number(
+        completed && ride.completionMethod === 'coordinator_verified',
+      ),
+      waitingMinutes: completed ? timing.wait : null,
+      drivingMinutes: completed ? timing.driving : null,
+      serviceMinutes: completed ? timing.service : null,
+      approvedMinutes: approved,
+      approvedHours: approved / 60,
+    };
+  });
+}
+
+export function summarizeFacts(facts: ReportFact[]) {
+  return {
+    rides: facts.length,
+    completed: facts.reduce((n, f) => n + f.completed, 0),
+    cancelled: facts.reduce((n, f) => n + f.cancelled, 0),
+    needsReview: facts.reduce((n, f) => n + f.needsReview, 0),
+    excluded: facts.reduce((n, f) => n + f.excluded, 0),
+    missingServiceTime: facts.reduce((n, f) => n + f.missingServiceTime, 0),
+    coordinatorCompletion: facts.reduce(
+      (n, f) => n + f.coordinatorCompletion,
+      0,
+    ),
+    waitingMinutes: facts.reduce((n, f) => n + (f.waitingMinutes ?? 0), 0),
+    drivingMinutes: facts.reduce((n, f) => n + (f.drivingMinutes ?? 0), 0),
+    serviceMinutes: facts.reduce((n, f) => n + (f.serviceMinutes ?? 0), 0),
+    approvedMinutes: facts.reduce((n, f) => n + f.approvedMinutes, 0),
+    approvedHours: facts.reduce((n, f) => n + f.approvedMinutes, 0) / 60,
+  };
+}
+
+export function groupFacts(
+  facts: ReportFact[],
+  dimension: 'date' | 'month' | 'driverId',
+) {
+  const groups = new Map<string, ReportFact[]>();
+  for (const fact of facts) {
+    const key = fact[dimension];
+    const group = groups.get(key) ?? [];
+    group.push(fact);
+    groups.set(key, group);
+  }
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, rows]) => ({
+      key,
+      label: dimension === 'driverId' ? rows[0].driver : key,
+      ...summarizeFacts(rows),
+    }));
+}

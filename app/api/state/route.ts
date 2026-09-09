@@ -29,7 +29,10 @@ export const POST = withApiLog(async function POST(req: Request) {
     const raw = await readLimitedBody(req);
     if (raw === null) throw new ApiError(413, 'Request too large.');
     const origin = req.headers.get('origin');
-    if (origin && origin !== new URL(req.url).origin)
+    if (
+      req.headers.get('sec-fetch-site') === 'cross-site' ||
+      (origin && origin !== new URL(req.url).origin)
+    )
       throw new ApiError(403, 'Cross-origin changes are not allowed.');
     if (!req.headers.get('content-type')?.startsWith('application/json'))
       throw new ApiError(415, 'JSON is required.');

@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { CompletionDialog } from './features/rides/completion-dialog';
 import {
   Dialog,
   DialogContent,
@@ -85,7 +86,23 @@ const blankFamily: Family = {
   notes: '',
   createdAt: '',
 };
-export function AppDialog({
+export function AppDialog(props: {
+  modal: Modal;
+  close: () => void;
+  state: State;
+  commit: Commit;
+}) {
+  if (props.modal.kind === 'admin-complete')
+    return (
+      <CompletionDialog
+        ride={props.modal.ride}
+        close={props.close}
+        commit={props.commit}
+      />
+    );
+  return <RecordDialog {...props} />;
+}
+function RecordDialog({
   modal,
   close,
   state,
@@ -141,12 +158,6 @@ export function AppDialog({
     [notes, setNotes] = useState(''),
     [reason, setReason] = useState(''),
     [rating, setRating] = useState(5);
-  const [completedAt, setCompletedAt] = useState(() => {
-    const d = new Date();
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  });
   const [member, setMember] = useState({
     name: '',
     email: '',
@@ -262,15 +273,6 @@ export function AppDialog({
             op: 'ride.action',
             id: modal.ride.id,
             action: modal.kind,
-            reason,
-          };
-          break;
-        case 'admin-complete':
-          payload = {
-            op: 'ride.action',
-            id: modal.ride.id,
-            action: 'admin-complete',
-            completedAt: new Date(completedAt).toISOString(),
             reason,
           };
           break;
@@ -648,37 +650,6 @@ export function AppDialog({
             placeholder="Add a short note for the activity log"
           />
         </Field>
-      )}
-      {modal.kind === 'admin-complete' && (
-        <>
-          <Field
-            label="Verified drop-off time"
-            hint="Entered in your device’s timezone."
-          >
-            <input
-              type="datetime-local"
-              required
-              value={completedAt}
-              onChange={(e) => setCompletedAt(e.target.value)}
-            />
-          </Field>
-          <Field label="Verification details">
-            <textarea
-              required
-              minLength={10}
-              maxLength={500}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Who confirmed drop-off and why driver GPS was unavailable"
-            />
-          </Field>
-          <div className="notice warning">
-            <ShieldCheck />
-            Confirm drop-off with the driver or guardian first. This closes the
-            ride without device GPS evidence and preserves the exception in the
-            activity history.
-          </div>
-        </>
       )}
       {modal.kind === 'help' && (
         <div className="notice warning">

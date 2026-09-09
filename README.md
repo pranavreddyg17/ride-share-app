@@ -7,7 +7,7 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Admin, driver and family membership bound to verified ChatGPT identities. Only the explicitly configured owner can initialize admin access. Practice personas use a separate per-user workspace.
 - Driver/family registers, screening attestations, approval/suspension, guardian consent, emergency contacts, confirmed meeting points, account grants/revocation and CSV exports.
 - Ride requests, manual assignment, acceptance, decline back to matching, arrival, pickup verification, completion, cancellation, help requests and ratings.
-- Admin-only recovery for a pickup-verified ride stranded by driver GPS failure. It requires a verified drop-off time and reason, labels the exception in the ride and Excel record, and preserves the actor in audit history.
+- Admin-only recovery for a pickup-verified ride stranded by driver GPS failure. It requires a verified drop-off time, source, reason and explicit arrival confirmation. The ride retains the recorder and submission time. Invalid calendar dates, future drop-offs and incomplete pickup timelines are rejected.
 - Six-digit pickup codes visible only to the assigned family, expiring after 15 minutes, locked after five incorrect attempts, consumed once, and reissued only by a coordinator.
 - Atomic ride, activity, notification and idempotency-receipt writes. Concurrent booking/assignment conflicts are rejected. Network retries reuse one key and cannot create duplicate rides. API rate limits bound request volume.
 - Separate storage for the latest GPS fix so tracking does not overwrite ride transitions. Only the assigned, currently approved driver can publish device positions. Stale, out-of-order, invalid and simulated real-pilot positions are rejected. Viewers poll every five seconds and mark GPS stale after 45 seconds.
@@ -21,6 +21,8 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Admin request logs show endpoint, actor, result, duration and request ID. Durable business events record who changed which record, the action, and the same request ID. Request logs omit bodies, query strings, codes, credentials and GPS payloads. See [IAM and audit](docs/IAM_AND_AUDIT.md).
 
 Excel exports are available in **Rides** and **Service hours**. **Settings** groups General, Account access, Service status and Request logs; old `/reports` and `/audit` links still open the corresponding tools. Drivers can call the assigned guardian only during an accepted or active trip. Completed trips open their saved confirmation, and historical activity uses the original participant and route snapshots.
+
+Service hours includes monthly approved-hour trends, driver timesheets and data-quality counts. Admin Excel adds daily totals, one analysis row per ride for PivotTables/Power BI, and a guide. Current credit contributes once; missing timestamps stay missing. Families receive driver phone numbers only during accepted or active trips.
 
 ## Run locally
 
@@ -53,7 +55,7 @@ The existing Site is identified in `.openai/hosting.json`. Its hosting audience 
 
 ## Architecture and limits
 
-`lib/server.ts` owns authorization and ride rules. `lib/reliability.ts` commits guarded primary writes, receipts and follow-up statements in D1 transactions. `ride_locations` contains only the newest fix. `lib/providers.ts` supplies road routes and public map configuration. `lib/notifications.ts` consumes the outbox using `lib/sms-provider.ts`; `/api/jobs/notifications` is the protected job entry point. `/api/operations` and `/api/export` require an admin.
+`lib/server.ts` is the API facade and dispatcher. `lib/server/` separates authentication, validation, storage, scoped reads and commands. `lib/reliability.ts` owns atomic commits, receipts and authorization revalidation. Provider, notification and GPS modules retain their existing responsibilities. See [architecture review](docs/ARCHITECTURE_REVIEW.md) for findings, boundaries and remaining limits.
 
 Prepared SQL, record versions, current membership checks and database guards enforce mutations. Driver/student trips require a 45-minute scheduling separation; accepted trips reserve 30 minutes in driver availability. This conservative fixed window is not a traffic-aware dispatch optimizer.
 

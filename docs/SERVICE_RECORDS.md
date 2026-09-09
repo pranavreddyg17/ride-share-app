@@ -37,7 +37,11 @@ Drivers can view and export their own credited service. They cannot review credi
 | Family register | Relevant students/guardians, contacts, consent and emergency contact                                                                                       |
 | Meeting points  | Relevant location register; the ride ledger separately preserves the agreed route snapshots                                                                |
 
-Driver workbooks contain the first three sheets only and omit student and guardian columns. Admin workbooks contain all seven sheets. Register sheets contain participants/locations associated with the filtered rides; use the register screens' CSV exports to include registered people who have no rides.
+Driver workbooks contain the first three sheets only and omit student and guardian columns. Admin workbooks contain ten sheets: the seven above plus **Daily totals**, **Analysis data** and **Report guide**. Register sheets cover participants/locations linked to filtered rides; use the register CSV exports to include people without rides.
+
+Analysis data has exactly one row per ride, stable driver IDs, scheduled pickup date/month in Central Time, numeric ride counts, durations and current approved credit. Daily totals and the monthly trend/driver timesheet aggregate the same facts. Missing durations remain blank with an explicit missing-time count. Analysis data omits student names and guardian contacts. See the report guide for measure definitions.
+
+Coordinator completion requires a source (driver, guardian or personal observation), reason and explicit arrival confirmation. Actual drop-off is separate from submission time and cannot precede pickup or be in the future. Recorder, source and reason remain on the ride and in the admin ledger after activity leaves the recent feed. GPS completions retain fix time, accuracy and distance from destination. Practice confirmations do not claim GPS evidence.
 
 Excel dates are explicitly encoded as Central wall-clock values, with UTC ISO timestamps also provided for scheduled pickup, arrival and completion. Numeric minutes and hours are numeric cells, suitable for sorting and aggregation. Notes remain plain text, even when starting with `=`. Pickup codes are never exported. Filters and frozen headers are built into the workbook. Exports are capped at 1,000 rides and three requests per minute per account; split larger periods.
 

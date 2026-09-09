@@ -413,9 +413,10 @@ function RideDetail({
                   </button>
                 )}
                 {status === 'in_progress' && (
-                  <>
+                  <details className="completion-exception">
+                    <summary>Driver unable to finish the ride?</summary>
                     <button
-                      className="btn primary"
+                      className="btn"
                       style={{ width: '100%', marginTop: 15 }}
                       disabled={busy}
                       onClick={() => open({ kind: 'admin-complete', ride })}
@@ -427,7 +428,7 @@ function RideDetail({
                       Recovery only: confirm the student arrived before closing
                       a ride without driver GPS.
                     </p>
-                  </>
+                  </details>
                 )}
                 {ride.rating && (
                   <div className="notice" style={{ marginTop: 15 }}>

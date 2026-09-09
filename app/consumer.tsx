@@ -3,7 +3,6 @@ import { postMutation } from '@/lib/client-api';
 import { useState, useEffect, useRef } from 'react';
 import { watchDevicePosition } from '@/lib/gps';
 import {
-  CarFront,
   ArrowRight,
   ArrowLeft,
   MapPin,
@@ -106,7 +105,14 @@ export function ConsumerHome(props: ConsumerProps) {
     );
   return (
     <section className="driver-idle">
-      <CarFront size={32} />
+      {/* eslint-disable-next-line next/no-img-element */}
+      <img
+        className="idle-vehicle"
+        src="/vehicle-render.png"
+        width={1536}
+        height={1024}
+        alt=""
+      />
       <h1>No assigned rides</h1>
       <p>Your coordinator’s next assignment will appear here.</p>
       <div className="actions">
@@ -901,7 +907,13 @@ export function TripScreen({
               <div className="ride-receipt">
                 <Check />
                 <div>
-                  <strong>Drop-off confirmed</strong>
+                  <strong>
+                    {ride.completionMethod === 'coordinator_verified'
+                      ? 'Drop-off verified by coordinator'
+                      : ride.completionMethod === 'practice'
+                        ? 'Practice ride completed'
+                        : 'Drop-off confirmed'}
+                  </strong>
                   <small>
                     {ride.completedAt ? time(ride.completedAt) + ' · ' : ''}
                     {ride.activity}

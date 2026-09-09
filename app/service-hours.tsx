@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { completionLabel } from '@/lib/ride-completion';
+import { ServiceInsights } from './features/reports/service-insights';
 import { ArrowUpRight, Download, Plus, X } from 'lucide-react';
 import {
   Table,
@@ -183,13 +185,29 @@ export function RideFacts({ ride }: { ride: Ride }) {
       </div>
       {ride.status === 'completed' && (
         <p className="ledger-note">
-          Drop-off evidence:{' '}
-          {ride.completionMethod === 'coordinator_verified'
-            ? 'Coordinator verified exception'
-            : ride.completionMethod === 'driver_gps'
-              ? 'Driver device GPS'
-              : 'Not recorded on this historical ride'}
+          Drop-off evidence: {completionLabel(ride)}
         </p>
+      )}
+      {ride.completion && (
+        <div className="completion-evidence">
+          <p>
+            Recorded by {ride.completion.recordedBy} ·{' '}
+            {date(ride.completion.recordedAt)} ·{' '}
+            {time(ride.completion.recordedAt)} CT
+          </p>
+          {ride.completion.verifiedWith && (
+            <p>
+              Verified with: {ride.completion.verifiedWith.replaceAll('_', ' ')}
+            </p>
+          )}
+          {ride.completion.reason && <p>{ride.completion.reason}</p>}
+          {ride.completion.gps && (
+            <p>
+              GPS accuracy {ride.completion.gps.accuracy} m ·{' '}
+              {ride.completion.gps.distanceMeters} m from destination
+            </p>
+          )}
+        </div>
       )}
     </section>
   );
@@ -384,8 +402,6 @@ export function ServiceHours({
 }: { commit: Commit } & ViewProps) {
   const [filters, setFilters] = useState<ReportFilters>({});
   const [selected, setSelected] = useState<string>();
-  const [downloadError, setDownloadError] = useState(''),
-    [downloading, setDownloading] = useState(false);
   const rides = filterRides(state, { ...filters, status: 'completed' });
   const reviews = state.credits.filter((c) =>
     rides.some((r) => r.id === c.rideId),
@@ -401,23 +417,15 @@ export function ServiceHours({
       >
         <button
           className="btn"
-          disabled={downloading}
-          onClick={async () => {
-            setDownloading(true);
-            setDownloadError('');
-            try {
-              await downloadReport(state, { ...filters, status: 'completed' });
-            } catch (e) {
-              setDownloadError((e as Error).message);
-            } finally {
-              setDownloading(false);
-            }
-          }}
+          onClick={() =>
+            downloadReport(state, { ...filters, status: 'completed' })
+          }
         >
           <Download />
-          {downloading ? 'Preparing…' : 'Export Excel'}
+          Export Excel
         </button>
       </Heading>
+      <Filters state={state} value={filters} onChange={setFilters} review />
       <div className="credit-overview">
         <div>
           <span>Approved service</span>
@@ -444,12 +452,7 @@ export function ServiceHours({
           </strong>
         </div>
       </div>
-      <Filters state={state} value={filters} onChange={setFilters} review />
-      {downloadError && (
-        <p className="error-message" role="alert">
-          {downloadError}
-        </p>
-      )}
+      <ServiceInsights state={state} rides={rides} />
       <div className="table-panel">
         <Table className="data-table">
           <TableHeader>
@@ -555,30 +558,20 @@ export function ServiceHours({
     </>
   );
 }
-export async function downloadReport(state: State, filters: ReportFilters) {
+function downloadReport(state: State, filters: ReportFilters) {
   const params = new URLSearchParams({
     mode: state.demo ? 'practice' : 'pilot',
+    download: '1',
   });
+  if (state.demo) params.set('viewAs', state.role);
   for (const [key, value] of Object.entries(filters))
     if (value && value !== 'all') params.set(key, value);
-  const res = await fetch('/api/reports?' + params, {
-    headers: { 'x-ky-role': state.role },
-  });
-  if (!res.ok) {
-    const error = (await res.json()) as { error?: string };
-    throw new Error(error.error ?? 'The export could not be prepared.');
-  }
-  const url = URL.createObjectURL(await res.blob()),
-    anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'kinetic-youth-records.xlsx';
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  // Let the browser handle the authenticated Content-Disposition response.
+  // This avoids unreliable blob downloads in embedded/mobile browsers.
+  window.location.assign('/api/reports?' + params);
 }
 export function RideLedger({ state, open, navigate }: ViewProps) {
-  const [filters, setFilters] = useState<ReportFilters>({}),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+  const [filters, setFilters] = useState<ReportFilters>({});
   const rides = filterRides(state, filters);
   return (
     <>
@@ -586,23 +579,9 @@ export function RideLedger({ state, open, navigate }: ViewProps) {
         title="Ride ledger"
         description="Schedule, actual timings, assignments, and service credit."
       >
-        <button
-          className="btn"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setError('');
-            try {
-              await downloadReport(state, filters);
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
+        <button className="btn" onClick={() => downloadReport(state, filters)}>
           <Download />
-          {busy ? 'Preparing…' : 'Export Excel'}
+          Export Excel
         </button>
         <button className="btn primary" onClick={() => open({ kind: 'ride' })}>
           <Plus />
@@ -618,11 +597,6 @@ export function RideLedger({ state, open, navigate }: ViewProps) {
         />
         <span>{rides.length} records</span>
       </div>
-      {error && (
-        <p className="error-message" role="alert">
-          {error}
-        </p>
-      )}
       <div className="table-panel">
         <Table className="data-table">
           <TableHeader>

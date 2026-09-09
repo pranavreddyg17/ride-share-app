@@ -13,6 +13,7 @@ export async function creditChecks({
   driver,
   id,
   forbiddenRide,
+  recoveryId,
 }) {
   let checks = 0;
   function check(label, fn) {
@@ -253,21 +254,40 @@ export async function creditChecks({
         : {},
     });
     if (res.status !== 200)
-      return { status: res.status, error: await res.text() };
+      return {
+        status: res.status,
+        error: await res.text(),
+        contentType: res.headers.get('content-type'),
+      };
     assert.match(res.headers.get('content-type'), /spreadsheetml/);
     assert.match(res.headers.get('cache-control'), /no-store/);
+    assert.match(
+      res.headers.get('content-disposition'),
+      /attachment; filename="kinetic-youth-records.xlsx"/,
+    );
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(Buffer.from(await res.arrayBuffer()));
     return { status: res.status, workbook };
   }
-  const anonymous = await report(null),
-    denied = await report(familyUser);
+  const anonymous = await report(null, '&download=1'),
+    denied = await report(familyUser, '&download=1&viewAs=admin');
   check('Excel export requires admin or driver authorization', () => {
     assert.equal(anonymous.status, 401);
     assert.equal(denied.status, 403);
   });
-  const full = await report(admin);
-  check('admin receives a readable seven-sheet Excel workbook', () => {
+  check(
+    'native download errors are readable and preserve authorization status',
+    () => {
+      for (const response of [anonymous, denied]) {
+        assert.match(response.contentType, /text\/html/);
+        assert.match(response.error, /Export unavailable/);
+        assert.match(response.error, /Return to your workspace/);
+        assert.ok(!response.error.includes('stack'));
+      }
+    },
+  );
+  const full = await report(admin, '&download=1');
+  check('admin receives a readable ten-sheet Excel workbook', () => {
     assert.equal(full.status, 200, full.error);
     assert.deepEqual(
       full.workbook.worksheets.map((s) => s.name),
@@ -275,6 +295,9 @@ export async function creditChecks({
         'Driver summary',
         'Ride ledger',
         'Credit reviews',
+        'Daily totals',
+        'Analysis data',
+        'Report guide',
         'Activity',
         'Driver register',
         'Family register',
@@ -296,6 +319,53 @@ export async function creditChecks({
   }
   const ledgerRow = rows(full.workbook, 'Ride ledger').find(
     (r) => r['Ride ID'] === id,
+  );
+  check(
+    'Excel retains coordinator evidence independently of credit review history',
+    () => {
+      const exception = rows(full.workbook, 'Ride ledger').find(
+        (r) => r['Ride ID'] === recoveryId,
+      );
+      assert.equal(
+        exception['Drop-off evidence'],
+        'Coordinator verified exception',
+      );
+      assert.equal(exception['Completion recorded by'], admin.email);
+      assert.equal(exception['Drop-off verified with'], 'guardian');
+      assert.match(
+        exception['Completion exception reason'],
+        /Driver phone could not obtain/,
+      );
+      assert.ok(exception['Completion recorded at (CT)'] instanceof Date);
+      assert.equal(exception['GPS accuracy (meters)'], null);
+    },
+  );
+  check(
+    'analysis and daily totals reconcile with the ledger without counting review history twice',
+    () => {
+      const facts = rows(full.workbook, 'Analysis data');
+      assert.equal(new Set(facts.map((r) => r['Ride ID'])).size, facts.length);
+      const fact = facts.find((r) => r['Ride ID'] === id);
+      assert.equal(fact['Approved credit minutes'], 60);
+      assert.equal(fact['Approved service hours'], 1);
+      assert.equal(fact['Completed count'], 1);
+      const daily = rows(full.workbook, 'Daily totals');
+      assert.equal(
+        daily.reduce((n, r) => n + r['Approved credit minutes'], 0),
+        facts.reduce((n, r) => n + r['Approved credit minutes'], 0),
+      );
+      assert.equal(
+        facts.reduce((n, r) => n + r['Completed count'], 0),
+        rows(full.workbook, 'Ride ledger').filter(
+          (r) => r.Status === 'completed',
+        ).length,
+      );
+      assert.ok(
+        !Object.keys(fact).some((key) =>
+          /student|guardian|phone|email/i.test(key),
+        ),
+      );
+    },
   );
   check(
     'Excel contains typed credit totals, actual timings and no pickup codes',
@@ -349,11 +419,15 @@ export async function creditChecks({
       assert.equal(rows(filtered.workbook, 'Credit reviews').length, 5);
     },
   );
-  const invalidDate = await report(admin, '&from=2026-02-31');
+  const invalidDate = await report(admin, '&from=2026-02-31&download=1');
   check('Excel rejects impossible calendar dates', () =>
     assert.equal(invalidDate.status, 400),
   );
-  const own = await report(driverUser);
+  check('native export validation returns a readable recovery page', () => {
+    assert.match(invalidDate.contentType, /text\/html/);
+    assert.match(invalidDate.error, /Use a valid report date/);
+  });
+  const own = await report(driverUser, '&download=1&viewAs=admin');
   const anotherDriver = await report(driverUser, '&driver=not-your-id');
   check(
     'driver Excel export contains own service records and no family register',
