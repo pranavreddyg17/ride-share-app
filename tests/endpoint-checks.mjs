@@ -517,6 +517,18 @@ export async function endpointChecks({
     'admin cannot impersonate driver completion',
   );
   await post(
+    auditAdmin,
+    {
+      op: 'ride.action',
+      id,
+      action: 'admin-complete',
+      completedAt: new Date().toISOString(),
+      reason: 'Completed rides cannot be closed again.',
+    },
+    409,
+    'coordinator recovery cannot overwrite a completed ride',
+  );
+  await post(
     driverUser,
     { op: 'ride.action', id, action: 'complete' },
     409,
@@ -613,6 +625,7 @@ export async function endpointChecks({
         (Date.parse(ride.completedAt) - Date.parse(ride.startedAt)) / 60000,
       );
       assert.equal(ledger['Participant records'], 'Recorded with ride');
+      assert.equal(ledger['Drop-off evidence'], 'Driver device GPS');
       assert.equal(
         rows('Credit reviews').filter((r) => r['Current decision']).length,
         1,

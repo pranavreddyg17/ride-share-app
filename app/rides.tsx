@@ -412,6 +412,23 @@ function RideDetail({
                     Issue new pickup code
                   </button>
                 )}
+                {status === 'in_progress' && (
+                  <>
+                    <button
+                      className="btn primary"
+                      style={{ width: '100%', marginTop: 15 }}
+                      disabled={busy}
+                      onClick={() => open({ kind: 'admin-complete', ride })}
+                    >
+                      <ShieldCheck />
+                      Record verified drop-off
+                    </button>
+                    <p className="fine-print">
+                      Recovery only: confirm the student arrived before closing
+                      a ride without driver GPS.
+                    </p>
+                  </>
+                )}
                 {ride.rating && (
                   <div className="notice" style={{ marginTop: 15 }}>
                     <Star />

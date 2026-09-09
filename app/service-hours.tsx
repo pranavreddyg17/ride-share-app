@@ -181,6 +181,16 @@ export function RideFacts({ ride }: { ride: Ride }) {
           <strong>{durationLabel(timing.service)}</strong>
         </div>
       </div>
+      {ride.status === 'completed' && (
+        <p className="ledger-note">
+          Drop-off evidence:{' '}
+          {ride.completionMethod === 'coordinator_verified'
+            ? 'Coordinator verified exception'
+            : ride.completionMethod === 'driver_gps'
+              ? 'Driver device GPS'
+              : 'Not recorded on this historical ride'}
+        </p>
+      )}
     </section>
   );
 }

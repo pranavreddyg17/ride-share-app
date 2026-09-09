@@ -45,6 +45,7 @@ export async function executeMutation(
     'refresh-code',
     'verify',
     'complete',
+    'admin-complete',
     'cancel',
     'sos',
     'rating',

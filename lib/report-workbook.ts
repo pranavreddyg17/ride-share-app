@@ -198,6 +198,7 @@ export async function reportWorkbook(
     { name: 'Reviewed by', width: 30 },
     { name: 'Reviewed at (CT)', width: 23, format: stamp },
     { name: 'Review note', width: 45 },
+    { name: 'Drop-off evidence', width: 28 },
     { name: 'Cancellation reason', width: 40 },
     { name: 'Scheduled pickup (UTC ISO)', width: 29 },
     { name: 'Arrival (UTC ISO)', width: 29 },
@@ -245,6 +246,11 @@ export async function reportWorkbook(
         c?.reviewedBy ?? '',
         centralDate(c?.reviewedAt),
         c?.reason ?? '',
+        r.completionMethod === 'coordinator_verified'
+          ? 'Coordinator verified exception'
+          : r.completionMethod === 'driver_gps'
+            ? 'Driver device GPS'
+            : 'Historical record: not captured',
         r.cancelReason,
         r.scheduledAt,
         r.arrivedAt ?? '',

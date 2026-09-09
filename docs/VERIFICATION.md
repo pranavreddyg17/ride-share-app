@@ -1,13 +1,13 @@
-# Local verification — September 8, 2026
+# Local verification — September 9, 2026
 
-This records the endpoint, IAM, audit and service-record hardening, followed by the interface cleanup. The user requested no publishing; the existing public Site was not updated.
+This records the endpoint, IAM, audit and service-record hardening, the interface cleanup, and the coordinator drop-off recovery added after publication. The Site is publicly reachable; real pilot data still requires an approved application membership.
 
 | Check                                                                    | Result                                                                                                                                               |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript, application lint and production build                        | Passed                                                                                                                                               |
 | Fresh D1 installation                                                    | All three migrations passed on an isolated database                                                                                                  |
 | Existing local database upgrade                                          | Migration 0002 applied successfully; existing records retained                                                                                       |
-| Full compiled Worker integration suite                                   | 407 integration checks passed; successful summary and PASS-line count agree                                                                          |
+| Full compiled Worker integration suite                                   | 422 integration checks passed; successful summary and PASS-line count agree                                                                          |
 | Focused endpoint/IAM suite                                               | 210 checks passed against the compiled Worker and persistent D1                                                                                      |
 | Provider, retry, foreground GPS, service-time and body-reader unit tests | 24 tests passed                                                                                                                                      |
 | API coverage                                                             | All nine routes; supported operations, authentication, role scope, unsupported methods, HEAD, invalid input and provider-unavailable behavior        |
@@ -21,6 +21,7 @@ This records the endpoint, IAM, audit and service-record hardening, followed by 
 | Concurrent GPS/arrival                                                   | Both persist without overwriting one another                                                                                                         |
 | Cross-account tracking                                                   | Guardian and admin identities receive the driver's stored position                                                                                   |
 | Guardian contact scope                                                   | Hidden before driver acceptance, available during the accepted trip, hidden after completion                                                         |
+| Coordinator drop-off recovery                                            | Driver/family denied; pre-pickup and future times rejected; verified time, exception label, actor, reason and request ID retained                    |
 | Dependency audit                                                         | npm audit --omit=dev: zero known vulnerabilities reported                                                                                            |
 
 The suite uses a compiled local Worker and separate simulated trusted gateway identities. Excel checks parse real authenticated XLSX responses. SQL faults are injected only into a dedicated test database and removed in finally blocks. Request metadata is read back from D1; a synthetic secret submitted in a body and query string is absent from the stored log.
@@ -43,7 +44,7 @@ The practice routing service returned 403 for requests without an application id
 
 ## Remaining verification and operational work
 
-- **No deployment.** The earlier Sites account/workspace mismatch remains unresolved. Local verification does not update or certify the public version.
+- **Release boundary.** The currently published version predates the coordinator recovery described above until its prepared update is deployed. Public reachability does not grant real pilot membership.
 - **Live providers.** Mapbox credentials, paid routing/tiles, Twilio carrier delivery and unattended notification processing through the hosting gateway remain unverified. No live SMS was sent; provider unit tests use controlled responses. External OSRM availability is outside the deterministic suite.
 - **Hosted HTTP and identity boundary.** Confirm that the hosting gateway sanitizes identity headers and applies the intended audience. Also test oversized/aborted uploads: after cancelling a 100 KB body, the local Miniflare proxy produced a transient 500 on the following request. This was reproduced with a minimal Worker outside this app; the equivalent hosted behavior has not been verified. The app client retries server/network errors with one idempotency key.
 - **Physical phones.** Browser practice tracking, API-injected coordinates and a fake geolocation object do not establish moving-device, screen-lock or background behavior. Those require the adult device rehearsal before student rides.

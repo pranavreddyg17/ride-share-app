@@ -12,6 +12,8 @@ Each grant has a unique `grant_id`. Revocation deletes that grant while preservi
 
 One driver record has one linked account. A family record can have multiple approved guardians. Contact-email edits do not change sign-in access. Admins cannot revoke themselves or the configured bootstrap owner through the app. No self-registration or self-promotion exists in the real pilot. Invalid roles or missing linked participant records fail closed.
 
+Normal drop-off completion remains driver-only and requires a recent device GPS fix at the destination. If a pickup-verified ride is stranded in progress because the driver device cannot report GPS, an administrator may record a coordinator-verified drop-off time. The server rejects times before pickup or in the future, requires a reason, labels the ride as an exception, and writes the actor, reason, request ID, and ride ID to durable business history.
+
 Practice data belongs to `practice:<verified user ID>`. Role switching operates only in that workspace and never grants pilot access. Practice logs and records are scoped to that same user.
 
 The interface waits for verified workspace data before displaying role navigation. A 401 or 403 on a later state refresh clears the loaded records and shows the account/access screen; the server remains the enforcement boundary.

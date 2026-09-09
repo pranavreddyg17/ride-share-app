@@ -4,11 +4,7 @@ This release implements a supervised, approved-participant web pilot. Local test
 
 ## 1. Hosting and release
 
-The latest admin/service-record redesign is local only, per the user's instruction not to publish. See [SERVICE_RECORDS.md](SERVICE_RECORDS.md) for credit policy, admin review and Excel export details. Publishing must remain a separate, explicitly requested step.
-
-Use the account/workspace that owns the existing Kinetic Youth Site. On September 8, 2026 the current Sites connection returned “project not found” and an empty site list; the hardened release could not be published through that connection. Preserve the existing project and database rather than creating a replacement.
-
-When access is restored and publishing is separately requested, configure runtime values below, publish the validated build with all three generated D1 migrations, and confirm success. Migration `0002_clever_golden_guardian.sql` backfills a unique grant identity for existing memberships and adds audit metadata. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. The previous live version is not evidence that the local changes are deployed.
+The hardened release is published at `https://kinetic-youth-pilot.pranavreddyg17.chatgpt.site`. The Site is publicly reachable, while real pilot records remain protected by the application membership register. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. See [SERVICE_RECORDS.md](SERVICE_RECORDS.md) for credit policy, admin review and Excel export details.
 
 ## 2. Runtime configuration
 
@@ -46,30 +42,31 @@ In Admin → Settings → Service status, confirm the worker timestamp advances 
 3. Review driver eligibility and original documents through the organization's secure process, record attestations/current expiries, and approve the driver. New drivers start in review.
 4. Register each guardian/student, reviewed consent and emergency number. One family record represents one student.
 5. Link each participant's actual ChatGPT email to the correct record in Account access. Add a backup coordinator. Profile email edits do not change sign-in access.
-6. Grant the same people access through the hosting audience controls. Hosting access does not grant app membership; membership does not bypass owner-only hosting.
+6. Confirm each person can reach the public Site. Public reachability does not grant access to pilot records; the application membership remains authoritative.
 7. Test separate participant accounts, unrelated-family isolation, driver/admin separation and revocation. The first successful sign-in binds an approved email to a verified account ID. Replacing that identity requires revoking and re-adding the grant. Each driver record can have only one sign-in account; changing a contact email does not replace it.
 
 ## 5. Adult device rehearsal
 
 Rehearse with adults before student rides, using the actual iPhone/Android devices and connectivity expected in the trial. A passenger should observe the app; drivers should not interact with it while moving.
 
-| Test                                     | Expected result                                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Request, assign and accept               | One durable ride visible to its guardian, assigned driver and coordinator; retries do not duplicate it                   |
-| Decline accepted request                 | Returns to coordinator matching, clears assignment and old GPS                                                           |
-| Arrival                                  | Fresh, sufficiently accurate device GPS near the agreed pickup                                                           |
-| Pickup code                              | Visible only to assigned guardian; expires after 15 minutes and starts the ride once                                     |
-| Moving phone                             | Guardian/coordinator devices receive real GPS updates                                                                    |
-| Network loss                             | Failed writes visible; stale GPS warning; reconnect refreshes current state                                              |
-| Denied GPS, locked or backgrounded phone | Updates may stop; data becomes stale; reopen and obtain a new fix                                                        |
-| Drop-off                                 | Wrong location, old fix and poor accuracy cannot complete the trip                                                       |
-| Help                                     | Coordinator sees the alert, older unresolved alerts remain visible, phone fallback works                                 |
-| Texts                                    | Consented devices receive messages; provider receipts match admin status                                                 |
-| Completion and rating                    | Code consumed, completion once, further tracking denied, rating once                                                     |
-| Service-credit review                    | Arrival-to-drop-off suggestion includes waiting; admin reason required; approved minutes visible to the driver           |
-| Credit amendment/export                  | Old and new decisions remain in history; only the current approval contributes to totals; Excel matches filtered records |
+| Test                                     | Expected result                                                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Request, assign and accept               | One durable ride visible to its guardian, assigned driver and coordinator; retries do not duplicate it                                                       |
+| Decline accepted request                 | Returns to coordinator matching, clears assignment and old GPS                                                                                               |
+| Arrival                                  | Fresh, sufficiently accurate device GPS near the agreed pickup                                                                                               |
+| Pickup code                              | Visible only to assigned guardian; expires after 15 minutes and starts the ride once                                                                         |
+| Moving phone                             | Guardian/coordinator devices receive real GPS updates                                                                                                        |
+| Network loss                             | Failed writes visible; stale GPS warning; reconnect refreshes current state                                                                                  |
+| Denied GPS, locked or backgrounded phone | Updates may stop; data becomes stale; reopen and obtain a new fix                                                                                            |
+| Drop-off                                 | Wrong location, old fix and poor accuracy cannot complete the trip                                                                                           |
+| Drop-off recovery                        | After pickup verification, an admin can record a verified drop-off time and reason when driver GPS is unavailable; the exception remains labeled and audited |
+| Help                                     | Coordinator sees the alert, older unresolved alerts remain visible, phone fallback works                                                                     |
+| Texts                                    | Consented devices receive messages; provider receipts match admin status                                                                                     |
+| Completion and rating                    | Code consumed, completion once, further tracking denied, rating once                                                                                         |
+| Service-credit review                    | Arrival-to-drop-off suggestion includes waiting; admin reason required; approved minutes visible to the driver                                               |
+| Credit amendment/export                  | Old and new decisions remain in history; only the current approval contributes to totals; Excel matches filtered records                                     |
 
-This web app cannot promise continuous background GPS. Desktop simulation does not test moving-device reliability. Define phone-based fallback and a process for a ride stranded in an active state if GPS fails; there is no unaudited completion bypass. If continuous background tracking is required, finish and test the native app path before student rides.
+This web app cannot promise continuous background GPS. Desktop simulation does not test moving-device reliability. The coordinator recovery action is an audited exception for a ride stranded after verified pickup; it must follow direct confirmation with the driver or guardian. If continuous background tracking is required, finish and test the native app path before student rides.
 
 ## 6. Recovery, retention and supervision
 

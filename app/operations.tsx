@@ -510,8 +510,9 @@ export function Settings({
               )}
             </div>
             <p>
-              Link a sign-in email to a registered driver or family, or grant
-              coordinator access.
+              Link an exact ChatGPT sign-in email to a registered driver or
+              family, or grant coordinator access. Public visitors cannot read
+              pilot records unless they are listed here.
             </p>
             {state.demo ? (
               <p className="notice">

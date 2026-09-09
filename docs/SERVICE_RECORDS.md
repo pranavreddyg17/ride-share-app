@@ -1,6 +1,6 @@
 # Driver service records
 
-This local release adds admin dispatch, a full ride ledger, service-credit review, and Excel reporting. It has not been published.
+This release adds admin dispatch, a full ride ledger, service-credit review, and Excel reporting.
 
 ## Time policy
 
@@ -11,6 +11,7 @@ This local release adds admin dispatch, a full ride ledger, service-credit revie
 - Existing records without arrival timestamps show unknown service time. The app does not invent or backfill those times from estimates.
 - New rides snapshot student/guardian details when requested and driver/vehicle details during assignment and pickup. Completed records retain those details after later register edits. Older records without these snapshots explicitly show a current-register fallback; historical values cannot be reconstructed reliably.
 - Completed rides require an admin review before appearing in approved service totals. Cancellation does not create credit.
+- Normal completion records driver device GPS evidence. A coordinator may close a pickup-verified ride when a device failure prevents drop-off confirmation, but must enter the verified drop-off time and a reason. The ride and Excel ledger label that exception; service credit still requires a separate review.
 
 ## Admin workflow
 

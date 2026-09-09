@@ -28,7 +28,7 @@ Keep the compiled output unchanged during the run. Stop the development server b
 
 Use the separate Worker registry shown above. The harness puts each local SQL process in `KY_TEST_STATE/sql-registry`; otherwise Wrangler's shared discovery registry can reload the Worker every time a fault-injection query runs. Keep both registry directories outside the compiled server's watched files.
 
-Coverage includes membership initialization/revocation, role escalation, record scope, review and consent, transitions, immutable meeting points, booking/assignment races, decline, expired/locked/replayed codes, GPS propagation/order/proximity/accuracy, concurrent GPS and arrival, unresolved-alert visibility, redacted exports, idempotent replay and recovery after an injected database failure. Server-rendered responses are checked without browser interaction.
+Coverage includes membership initialization/revocation, role escalation, record scope, review and consent, transitions, immutable meeting points, booking/assignment races, decline, expired/locked/replayed codes, GPS propagation/order/proximity/accuracy, concurrent GPS and arrival, admin-only verified drop-off recovery, unresolved-alert visibility, redacted exports, idempotent replay and recovery after an injected database failure. Server-rendered responses are checked without browser interaction.
 
 `credit-checks.mjs` exercises admin-only credit approval, validation, idempotent replay, conflicting revisions, exclusions, immutable timestamps and complete decision history. It also parses the actual Excel API response, checking numeric totals, timestamp cells, plain-text notes, role restrictions, filtering and all seven admin sheets.
 

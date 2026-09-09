@@ -1071,6 +1071,7 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       updatedAt: now(),
       startedAt: null,
       completedAt: null,
+      completionMethod: null,
       acceptedAt: null,
       arrivedAt: null,
       cancelledAt: null,
@@ -1202,7 +1203,37 @@ export async function mutate(c: Context, body: Record<string, unknown>) {
       if (!c.demo) await requireProximity(c, r, 'dropoff');
       r.status = 'completed';
       r.completedAt = now();
+      r.completionMethod = 'driver_gps';
       message = 'Drop-off confirmed. Ride completed.';
+    } else if (action === 'admin-complete') {
+      requireRole(c, 'admin');
+      if (r.status !== 'in_progress' || !r.startedAt)
+        throw new ApiError(
+          409,
+          'Only an in-progress, pickup-verified ride can be closed by a coordinator.',
+        );
+      const reason = txt(body.reason, 10, 500);
+      const completedAt = txt(body.completedAt, 20, 35);
+      if (
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(
+          completedAt,
+        )
+      )
+        throw new ApiError(400, 'Drop-off time must include its timezone.');
+      const completed = Date.parse(completedAt);
+      if (
+        !Number.isFinite(completed) ||
+        completed < Date.parse(r.startedAt) ||
+        completed > Date.now() + 60000
+      )
+        throw new ApiError(
+          400,
+          'Drop-off time must be after pickup verification and cannot be in the future.',
+        );
+      r.status = 'completed';
+      r.completedAt = new Date(completed).toISOString();
+      r.completionMethod = 'coordinator_verified';
+      message = `Coordinator verified drop-off at ${r.completedAt}: ${reason}`;
     } else if (action === 'cancel') {
       requireRole(c, 'admin', 'driver', 'family');
       if (['in_progress', 'completed', 'cancelled'].includes(r.status))

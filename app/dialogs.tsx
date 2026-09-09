@@ -32,7 +32,16 @@ export type Modal =
   | { kind: 'family'; family?: Family }
   | { kind: 'anchor'; anchor?: Anchor }
   | { kind: 'driver-status'; driver: Driver; status: string }
-  | { kind: 'assign' | 'cancel' | 'decline' | 'help' | 'rating'; ride: Ride }
+  | {
+      kind:
+        | 'assign'
+        | 'cancel'
+        | 'decline'
+        | 'help'
+        | 'rating'
+        | 'admin-complete';
+      ride: Ride;
+    }
   | { kind: 'resolve'; event: Activity }
   | { kind: 'member' }
   | { kind: 'member-remove'; email: string };
@@ -132,6 +141,12 @@ export function AppDialog({
     [notes, setNotes] = useState(''),
     [reason, setReason] = useState(''),
     [rating, setRating] = useState(5);
+  const [completedAt, setCompletedAt] = useState(() => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  });
   const [member, setMember] = useState({
     name: '',
     email: '',
@@ -152,6 +167,7 @@ export function AppDialog({
     decline: 'Return this ride to the coordinator',
     help: 'Request coordinator help',
     rating: 'How was the ride?',
+    'admin-complete': 'Record verified drop-off',
     resolve: 'Resolve help request',
     member: 'Grant pilot access',
     'member-remove': 'Revoke pilot access',
@@ -174,9 +190,11 @@ export function AppDialog({
       'Your coordinator will find another driver. The family’s request stays open.',
     help: 'This alerts your coordinator in the app. Text delivery depends on service setup. For immediate danger, call emergency services.',
     rating: 'Your feedback helps the coordinator improve future rides.',
+    'admin-complete':
+      'Use this only after confirming the student reached the destination. The exception is recorded for review.',
     resolve: 'Record what happened and how this request was handled.',
     member:
-      'Enter the exact email the person uses to sign in. This adds access; it does not send an invitation.',
+      'Enter the exact email the person uses to sign in with ChatGPT. This grants access to real pilot records.',
   };
   async function submit(e: React.SubmitEvent) {
     e.preventDefault();
@@ -244,6 +262,15 @@ export function AppDialog({
             op: 'ride.action',
             id: modal.ride.id,
             action: modal.kind,
+            reason,
+          };
+          break;
+        case 'admin-complete':
+          payload = {
+            op: 'ride.action',
+            id: modal.ride.id,
+            action: 'admin-complete',
+            completedAt: new Date(completedAt).toISOString(),
             reason,
           };
           break;
@@ -318,6 +345,7 @@ export function AppDialog({
   );
   const destructive =
     modal.kind === 'cancel' ||
+    modal.kind === 'admin-complete' ||
     modal.kind === 'member-remove' ||
     (modal.kind === 'driver-status' && modal.status === 'suspended');
   const fields = (
@@ -621,6 +649,37 @@ export function AppDialog({
           />
         </Field>
       )}
+      {modal.kind === 'admin-complete' && (
+        <>
+          <Field
+            label="Verified drop-off time"
+            hint="Entered in your device’s timezone."
+          >
+            <input
+              type="datetime-local"
+              required
+              value={completedAt}
+              onChange={(e) => setCompletedAt(e.target.value)}
+            />
+          </Field>
+          <Field label="Verification details">
+            <textarea
+              required
+              minLength={10}
+              maxLength={500}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Who confirmed drop-off and why driver GPS was unavailable"
+            />
+          </Field>
+          <div className="notice warning">
+            <ShieldCheck />
+            Confirm drop-off with the driver or guardian first. This closes the
+            ride without device GPS evidence and preserves the exception in the
+            activity history.
+          </div>
+        </>
+      )}
       {modal.kind === 'help' && (
         <div className="notice warning">
           <Phone />
@@ -712,8 +771,8 @@ export function AppDialog({
           )}
           <div className="notice warning">
             <Info />
-            The participant must also be able to open the site. Granting an
-            account does not change the site’s audience settings.
+            The public site can be opened by anyone. Only accounts listed here
+            can access real pilot records.
           </div>
         </>
       )}
@@ -745,11 +804,13 @@ export function AppDialog({
                 ? 'Confirm status'
                 : modal.kind === 'cancel'
                   ? 'Cancel ride'
-                  : modal.kind === 'member'
-                    ? 'Grant access'
-                    : modal.kind === 'decline'
-                      ? 'Return request'
-                      : 'Save changes'}
+                  : modal.kind === 'admin-complete'
+                    ? 'Record drop-off'
+                    : modal.kind === 'member'
+                      ? 'Grant access'
+                      : modal.kind === 'decline'
+                        ? 'Return request'
+                        : 'Save changes'}
         </button>
       </div>
     </form>

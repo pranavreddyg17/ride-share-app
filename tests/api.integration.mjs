@@ -752,6 +752,94 @@ await post(
   409,
   'duplicate rating denied',
 );
+const recoveryRequest = await post(familyUser, {
+  ...booking,
+  scheduledAt: scheduled(),
+  activity: 'Coordinator recovery check',
+});
+const recoveryId = recoveryRequest.id;
+await post(admin, {
+  op: 'ride.action',
+  id: recoveryId,
+  action: 'assign',
+  driverId: driver.id,
+});
+await post(driverUser, {
+  op: 'ride.action',
+  id: recoveryId,
+  action: 'accept',
+});
+await post(driverUser, {
+  op: 'location',
+  id: recoveryId,
+  lat: a.lat,
+  lng: a.lng,
+  accuracy: 8,
+});
+await post(driverUser, {
+  op: 'ride.action',
+  id: recoveryId,
+  action: 'arrive',
+});
+const recoveryCode = (await read(familyUser)).rides.find(
+  (ride) => ride.id === recoveryId,
+).otp;
+await post(driverUser, {
+  op: 'ride.action',
+  id: recoveryId,
+  action: 'verify',
+  otp: recoveryCode,
+});
+const recoveryStartedAt = (await read(admin)).rides.find(
+  (ride) => ride.id === recoveryId,
+).startedAt;
+const recoveryPayload = {
+  op: 'ride.action',
+  id: recoveryId,
+  action: 'admin-complete',
+  completedAt: new Date().toISOString(),
+  reason: 'Driver phone could not obtain a destination GPS fix.',
+};
+await post(
+  driverUser,
+  recoveryPayload,
+  403,
+  'driver cannot use coordinator drop-off recovery',
+);
+await post(
+  familyUser,
+  recoveryPayload,
+  403,
+  'family cannot use coordinator drop-off recovery',
+);
+await post(
+  admin,
+  {
+    ...recoveryPayload,
+    completedAt: new Date(Date.parse(recoveryStartedAt) - 1000).toISOString(),
+  },
+  400,
+  'coordinator recovery rejects a drop-off before pickup verification',
+);
+await post(admin, recoveryPayload);
+const recoveredRideState = await read(admin);
+const recoveredRide = recoveredRideState.rides.find(
+  (ride) => ride.id === recoveryId,
+);
+assert.equal(recoveredRide.status, 'completed');
+assert.equal(recoveredRide.completionMethod, 'coordinator_verified');
+assert.ok(
+  recoveredRideState.events.some(
+    (entry) =>
+      entry.rideId === recoveryId &&
+      entry.action === 'ride.admin-complete' &&
+      entry.message.includes('Driver phone could not obtain'),
+  ),
+);
+checks++;
+console.log(
+  'PASS coordinator recovery closes only a pickup-verified ride and records the exception',
+);
 const otherGuardian = {
   id: 'other-' + run,
   email: `other-${run}@ky-test.example`,

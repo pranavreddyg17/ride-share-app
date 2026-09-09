@@ -7,6 +7,7 @@ A mobile-friendly application for a coordinator-led, approved-participant transp
 - Admin, driver and family membership bound to verified ChatGPT identities. Only the explicitly configured owner can initialize admin access. Practice personas use a separate per-user workspace.
 - Driver/family registers, screening attestations, approval/suspension, guardian consent, emergency contacts, confirmed meeting points, account grants/revocation and CSV exports.
 - Ride requests, manual assignment, acceptance, decline back to matching, arrival, pickup verification, completion, cancellation, help requests and ratings.
+- Admin-only recovery for a pickup-verified ride stranded by driver GPS failure. It requires a verified drop-off time and reason, labels the exception in the ride and Excel record, and preserves the actor in audit history.
 - Six-digit pickup codes visible only to the assigned family, expiring after 15 minutes, locked after five incorrect attempts, consumed once, and reissued only by a coordinator.
 - Atomic ride, activity, notification and idempotency-receipt writes. Concurrent booking/assignment conflicts are rejected. Network retries reuse one key and cannot create duplicate rides. API rate limits bound request volume.
 - Separate storage for the latest GPS fix so tracking does not overwrite ride transitions. Only the assigned, currently approved driver can publish device positions. Stale, out-of-order, invalid and simulated real-pilot positions are rejected. Viewers poll every five seconds and mark GPS stale after 45 seconds.
@@ -44,7 +45,7 @@ See [tests/README.md](tests/README.md) for isolated compiled-Worker integration 
 
 ## Trial setup
 
-The current admin and service-record redesign is local only. The user requested that it not be published.
+The current release is published on the existing Kinetic Youth Site. The Site is publicly reachable; the server-side membership register still denies real pilot data to unregistered identities.
 
 Follow [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md). Runtime credentials belong in hosting secrets, never source files or chat. Provider integrations are prepared; real SMS delivery, production map access, an unattended notification schedule, production recovery and physical-phone behavior still require setup and verification.
 
