@@ -68,8 +68,8 @@ async function req(user, path = '/api/state?mode=pilot', body, extra = {}) {
       Connection: 'close',
       ...(user
         ? {
-            'oai-authenticated-user-id': user.id,
-            'oai-authenticated-user-email': user.email,
+            'x-ky-authenticated-user-id': user.id,
+            'x-ky-authenticated-user-email': user.email,
           }
         : {}),
       ...(requestBody
@@ -1268,8 +1268,8 @@ for (const page of [
 ]) {
   const res = await fetch(base + page, {
     headers: {
-      'oai-authenticated-user-id': admin.id,
-      'oai-authenticated-user-email': admin.email,
+      'x-ky-authenticated-user-id': admin.id,
+      'x-ky-authenticated-user-email': admin.email,
     },
   });
   assert.equal(res.status, 200, `render ${page}`);

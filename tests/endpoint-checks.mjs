@@ -92,8 +92,8 @@ export async function endpointChecks({
       const res = await fetch(base + '/api/' + path + '?mode=pilot', {
         method,
         headers: {
-          'oai-authenticated-user-id': auditAdmin.id,
-          'oai-authenticated-user-email': auditAdmin.email,
+          'x-ky-authenticated-user-id': auditAdmin.id,
+          'x-ky-authenticated-user-email': auditAdmin.email,
           Connection: 'close',
         },
       });
@@ -151,8 +151,8 @@ export async function endpointChecks({
     const result = await fetch(base + '/api/state?mode=pilot', {
       method: 'POST',
       headers: {
-        'oai-authenticated-user-id': auditAdmin.id,
-        'oai-authenticated-user-email': auditAdmin.email,
+        'x-ky-authenticated-user-id': auditAdmin.id,
+        'x-ky-authenticated-user-email': auditAdmin.email,
         'Content-Type': type,
         'Idempotency-Key': crypto.randomUUID(),
         Connection: 'close',
@@ -573,8 +573,8 @@ export async function endpointChecks({
   );
   const report = await fetch(base + '/api/reports?mode=pilot&query=' + id, {
     headers: {
-      'oai-authenticated-user-id': auditAdmin.id,
-      'oai-authenticated-user-email': auditAdmin.email,
+      'x-ky-authenticated-user-id': auditAdmin.id,
+      'x-ky-authenticated-user-email': auditAdmin.email,
       Connection: 'close',
     },
   });

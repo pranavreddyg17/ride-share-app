@@ -25,16 +25,6 @@ Real pilot access is invitation-only. A coordinator grants each approved admin, 
 - An exceptional coordinator close requires a verified time, verification source, a written reason, and an explicit student-arrival confirmation.
 - Every important change produces an audit record with the actor, action, record, and request ID.
 
-## Demo
-
-Use the **Practice workspace** on the sign-in screen to explore isolated sample records. It does not mix with pilot data.
-
-The recording outline for a 30-second GitHub demo is in [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md). Add the exported video to your GitHub release or issue, then replace the link below with its GitHub asset URL. [docs/GITHUB_PUBLISH.md](docs/GITHUB_PUBLISH.md) explains how to create and push your own commits.
-
-```text
-Demo video: add your GitHub video link here
-```
-
 ## Run locally
 
 Requirements: Node 22.13+ and npm.
@@ -69,7 +59,3 @@ See [docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md) for the design re
 Configure production mapping and SMS providers, confirm hosting identity-header protection, connect monitoring and alerts, rehearse recovery, and run an adult-device trial for GPS and handoff workflows. Foreground web tracking does not guarantee background location updates on a locked phone.
 
 Detailed preparation steps are in [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md).
-
-## License
-
-Add a license before sharing the repository publicly.

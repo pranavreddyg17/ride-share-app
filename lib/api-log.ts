@@ -1,5 +1,5 @@
 import { env, waitUntil } from 'cloudflare:workers';
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getAuthenticatedUser } from '@/app/identity';
 
 type Identity = {
   workspace: string | null;
@@ -32,7 +32,7 @@ export function withApiLog(handler: (req: Request) => Promise<Response>) {
     traces.set(req, trace);
     let response: Response;
     try {
-      const user = await getChatGPTUser();
+      const user = await getAuthenticatedUser();
       const mode = new URL(req.url).searchParams.get('mode');
       if (user)
         trace.identity = {

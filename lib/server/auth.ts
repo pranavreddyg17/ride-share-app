@@ -1,11 +1,11 @@
 import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { getAuthenticatedUser } from '@/app/identity';
 import { sampleData } from '../seed';
 import { traceIdentity, traceId } from '../api-log';
 import type { Role, Settings, Ride } from '../types';
 import { ApiError, db, now, uid, type Context } from './runtime';
 export async function context(req: Request): Promise<Context> {
-  const user = await getChatGPTUser();
+  const user = await getAuthenticatedUser();
   if (!user) throw new ApiError(401, 'Sign in to access your pilot workspace.');
   const mode = new URL(req.url).searchParams.get('mode');
   if (mode && !['practice', 'pilot'].includes(mode))

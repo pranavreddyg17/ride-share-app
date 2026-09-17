@@ -4,7 +4,7 @@ This release implements a supervised, approved-participant web pilot. Local test
 
 ## 1. Hosting and release
 
-The hardened release is published at `https://kinetic-youth-pilot.pranavreddyg17.chatgpt.site`. The Site is publicly reachable, while real pilot records remain protected by the application membership register. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. See [SERVICE_RECORDS.md](SERVICE_RECORDS.md) for credit policy, admin review and Excel export details.
+Deploy the application behind an identity-aware gateway. The pilot can be publicly reachable while real records remain protected by the application membership register. Verify `/api/state?mode=pilot` as the owner and then as an unregistered account; the latter must be denied. See [SERVICE_RECORDS.md](SERVICE_RECORDS.md) for credit policy, admin review and Excel export details.
 
 ## 2. Runtime configuration
 
@@ -13,7 +13,7 @@ Use hosting environment/secret controls and redeploy after changes. Never put re
 | Variable                       | Purpose                                                                      | Handling                                                       |
 | ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `KY_BOOTSTRAP_ADMIN_EMAIL`     | Initial owner's verified email; expected owner is `pranavreddyg17@gmail.com` | Confirm against owning account                                 |
-| `KY_PUBLIC_ORIGIN`             | `https://kinetic-youth-pilot.pranavreddyg17.chatgpt.site`                    | Non-secret; no trailing slash                                  |
+| `KY_PUBLIC_ORIGIN`             | Your deployed HTTPS origin                                                   | Non-secret; no trailing slash                                  |
 | `MAPBOX_ACCESS_TOKEN`          | Server-side Directions API access                                            | Store as secret; separate from browser token                   |
 | `MAPBOX_PUBLIC_TOKEN`          | Public `pk.` token for map tiles                                             | Restrict to the actual Site origin; browser-readable by design |
 | `TWILIO_ACCOUNT_SID`           | Twilio account identifier                                                    | Runtime config                                                 |
@@ -41,7 +41,7 @@ In Admin → Settings → Service status, confirm the worker timestamp advances 
 2. Confirm partner coordinates and instructions. Register at least two active meeting points.
 3. Review driver eligibility and original documents through the organization's secure process, record attestations/current expiries, and approve the driver. New drivers start in review.
 4. Register each guardian/student, reviewed consent and emergency number. One family record represents one student.
-5. Link each participant's actual ChatGPT email to the correct record in Account access. Add a backup coordinator. Profile email edits do not change sign-in access.
+5. Link each participant's verified sign-in email to the correct record in Account access. Add a backup coordinator. Profile email edits do not change sign-in access.
 6. Confirm each person can reach the public Site. Public reachability does not grant access to pilot records; the application membership remains authoritative.
 7. Test separate participant accounts, unrelated-family isolation, driver/admin separation and revocation. The first successful sign-in binds an approved email to a verified account ID. Replacing that identity requires revoking and re-adding the grant. Each driver record can have only one sign-in account; changing a contact email does not replace it.
 

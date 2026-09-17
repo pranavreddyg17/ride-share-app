@@ -10,7 +10,7 @@ function response(value: unknown, status = 200) {
     status,
     headers: {
       'Cache-Control': 'private, no-store',
-      Vary: 'Cookie, oai-authenticated-user-id, x-ky-role',
+      Vary: 'Cookie, x-ky-authenticated-user-id, x-ky-role',
       'X-Content-Type-Options': 'nosniff',
     },
   });

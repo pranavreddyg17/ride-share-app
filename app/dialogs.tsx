@@ -205,7 +205,7 @@ function RecordDialog({
       'Use this only after confirming the student reached the destination. The exception is recorded for review.',
     resolve: 'Record what happened and how this request was handled.',
     member:
-      'Enter the exact email the person uses to sign in with ChatGPT. This grants access to real pilot records.',
+      'Enter the exact email verified by your sign-in provider. This grants access to real pilot records.',
   };
   async function submit(e: React.SubmitEvent) {
     e.preventDefault();

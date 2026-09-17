@@ -510,7 +510,7 @@ export function Settings({
               )}
             </div>
             <p>
-              Link an exact ChatGPT sign-in email to a registered driver or
+              Link an exact verified sign-in email to a registered driver or
               family, or grant coordinator access. Public visitors cannot read
               pilot records unless they are listed here.
             </p>

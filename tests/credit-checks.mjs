@@ -248,8 +248,8 @@ export async function creditChecks({
     const res = await fetch(base + '/api/reports?mode=pilot' + query, {
       headers: user
         ? {
-            'oai-authenticated-user-id': user.id,
-            'oai-authenticated-user-email': user.email,
+            'x-ky-authenticated-user-id': user.id,
+            'x-ky-authenticated-user-email': user.email,
           }
         : {},
     });

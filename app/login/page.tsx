@@ -1,9 +1,9 @@
-import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
+import { getAuthenticatedUser, signInPath, signOutPath } from '../identity';
 import { Brand } from '../shell';
 import { ArrowRight } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 export default async function Login() {
-  const user = await getChatGPTUser();
+  const user = await getAuthenticatedUser();
   return (
     <main className="login-v2">
       <section className="login-visual">
@@ -31,9 +31,9 @@ export default async function Login() {
         <a
           className="btn primary"
           target="_top"
-          href={user ? '/?mode=pilot' : chatGPTSignInPath('/?mode=pilot')}
+          href={user ? '/?mode=pilot' : signInPath('/?mode=pilot')}
         >
-          {user ? 'Open pilot workspace' : 'Continue with ChatGPT'}
+          {user ? 'Open pilot workspace' : 'Continue to sign in'}
           <ArrowRight size={18} />
         </a>
         <a
@@ -42,7 +42,7 @@ export default async function Login() {
           href={
             user
               ? '/?mode=practice&viewAs=admin'
-              : chatGPTSignInPath('/?mode=practice&viewAs=admin')
+              : signInPath('/?mode=practice&viewAs=admin')
           }
         >
           Open practice workspace
@@ -57,7 +57,7 @@ export default async function Login() {
             {user.email}
             <br />
             {/* eslint-disable-next-line next/no-html-link-for-pages */}
-            <a href="/signout-with-chatgpt?return_to=%2Flogin" target="_top">
+            <a href={signOutPath('/login')} target="_top">
               Sign out
             </a>
           </p>
