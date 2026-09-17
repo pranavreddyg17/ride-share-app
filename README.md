@@ -1,72 +1,75 @@
 # Kinetic Youth
 
-A mobile-friendly application for a coordinator-led, approved-participant transportation pilot. React/Vinext screens call authenticated Worker APIs backed by Cloudflare D1. This is a small supervised pilot implementation, not an Uber-scale service or a native mobile app.
+Kinetic Youth is a coordinator-led transportation pilot that helps approved families connect students with approved high-school drivers for activities, tutoring, and community programs.
 
-## Implemented
+It is designed for a small supervised launch: coordinators run dispatch, families request and track rides, and drivers complete a clear pickup-to-drop-off workflow. The system keeps the service records needed to recognize driver volunteer hours without treating a demo ride as a verified credit.
 
-- Admin, driver and family membership bound to verified ChatGPT identities. Only the explicitly configured owner can initialize admin access. Practice personas use a separate per-user workspace.
-- Driver/family registers, screening attestations, approval/suspension, guardian consent, emergency contacts, confirmed meeting points, account grants/revocation and CSV exports.
-- Ride requests, manual assignment, acceptance, decline back to matching, arrival, pickup verification, completion, cancellation, help requests and ratings.
-- Admin-only recovery for a pickup-verified ride stranded by driver GPS failure. It requires a verified drop-off time, source, reason and explicit arrival confirmation. The ride retains the recorder and submission time. Invalid calendar dates, future drop-offs and incomplete pickup timelines are rejected.
-- Six-digit pickup codes visible only to the assigned family, expiring after 15 minutes, locked after five incorrect attempts, consumed once, and reissued only by a coordinator.
-- Atomic ride, activity, notification and idempotency-receipt writes. Concurrent booking/assignment conflicts are rejected. Network retries reuse one key and cannot create duplicate rides. API rate limits bound request volume.
-- Separate storage for the latest GPS fix so tracking does not overwrite ride transitions. Only the assigned, currently approved driver can publish device positions. Stale, out-of-order, invalid and simulated real-pilot positions are rejected. Viewers poll every five seconds and mark GPS stale after 45 seconds.
-- Pickup and drop-off require device GPS less than 60 seconds old, reported accuracy at most 100 m, within 200 m of the agreed location. Ride snapshots preserve meeting points after anchor edits.
-- Mapbox traffic-aware road directions and map tiles for the real pilot; OpenStreetMap/OSRM for practice. Missing or failed providers are shown explicitly, without fabricated routes or ETAs.
-- Consent-aware Twilio outbox with send claims, provider delivery reconciliation, expiry and visible failed/unknown states. Acceptance is distinguished from delivery. Ambiguous sends are not blindly retried.
-- Admin service status, missing-configuration checks, stale-ride counts, alert history, unresolved help (including older open alerts), and redacted operational JSON export.
-- Monochrome dispatch console, searchable ride ledger, driver service-credit reviews and role-scoped Excel workbooks with full amendment history. Suggested credit uses arrival at pickup through drop-off, including waiting; only admin-approved credit contributes to totals. See [service records](docs/SERVICE_RECORDS.md).
-- Driver, student and vehicle snapshots preserve trip identity after profile edits. Register edits use versions to reject stale overwrites; material driver changes require renewed screening, while contact edits preserve approval.
-- Each account grant has a separate identity. Revoking/regranting access invalidates old writes and retry receipts; a driver record has one linked sign-in account. Membership, bound identity and grant are checked when mutations commit.
-- Admin request logs show endpoint, actor, result, duration and request ID. Durable business events record who changed which record, the action, and the same request ID. Request logs omit bodies, query strings, codes, credentials and GPS payloads. See [IAM and audit](docs/IAM_AND_AUDIT.md).
+> **Pilot scope:** This is a mobile-friendly web application for supervised community transportation. It is not a replacement for commercial rideshare infrastructure, emergency services, or adult safety review.
 
-Excel exports are available in **Rides** and **Service hours**. **Settings** groups General, Account access, Service status and Request logs; old `/reports` and `/audit` links still open the corresponding tools. Drivers can call the assigned guardian only during an accepted or active trip. Completed trips open their saved confirmation, and historical activity uses the original participant and route snapshots.
+## What it does
 
-Service hours includes monthly approved-hour trends, driver timesheets and data-quality counts. Admin Excel adds daily totals, one analysis row per ride for PivotTables/Power BI, and a guide. Current credit contributes once; missing timestamps stay missing. Families receive driver phone numbers only during accepted or active trips.
+- **Coordinator workspace** — manage driver and family registers, meeting points, ride assignments, help requests, activity logs, access grants, and service-hour reviews.
+- **Family workspace** — request rides, view the route and driver status, receive a one-time pickup code, and follow progress during an active trip.
+- **Driver workspace** — review assignments, publish foreground location while driving, verify pickup, finish the ride, and view approved volunteer hours.
+- **Trackable ride records** — captures the schedule, assignment, arrival, pickup verification, drop-off, completion evidence, and the activity history for each ride.
+- **Service-hour records** — suggests service time from arrival at pickup through drop-off, including waiting. Only a coordinator-approved review contributes to totals.
+- **Operations reporting** — export role-scoped Excel workbooks with a ride ledger, service-credit history, daily totals, analysis data, participant registers, and a reporting guide.
+
+## Safety and access model
+
+Real pilot access is invitation-only. A coordinator grants each approved admin, driver, or family member a role. The application checks that role and its linked record on every request.
+
+- Pickup codes are single-use, time-limited, and limited to the assigned family and driver.
+- Driver and guardian contact details are only shown for accepted or active trips.
+- GPS updates are accepted only from the assigned approved driver and are validated for freshness, accuracy, and agreed meeting-point proximity.
+- An exceptional coordinator close requires a verified time, verification source, a written reason, and an explicit student-arrival confirmation.
+- Every important change produces an audit record with the actor, action, record, and request ID.
+
+## Demo
+
+Use the **Practice workspace** on the sign-in screen to explore isolated sample records. It does not mix with pilot data.
+
+The recording outline for a 30-second GitHub demo is in [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md). Add the exported video to your GitHub release or issue, then replace the link below with its GitHub asset URL. [docs/GITHUB_PUBLISH.md](docs/GITHUB_PUBLISH.md) explains how to create and push your own commits.
+
+```text
+Demo video: add your GitHub video link here
+```
 
 ## Run locally
 
-Use Node 22.13+ and the existing npm lockfile.
+Requirements: Node 22.13+ and npm.
 
-```sh
+```bash
 npm ci
 npm run db:local
 npm run dev
 ```
 
-Open the Local URL and select **Practice workspace**. Local sign-in comes from the Sites development plugin, which strips forged identity headers. Real admin initialization requires `KY_BOOTSTRAP_ADMIN_EMAIL` in the runtime environment. There is no first-visitor or localhost admin bypass.
+Open the local URL and select **Practice workspace**. Real admin initialization requires `KY_BOOTSTRAP_ADMIN_EMAIL` in the runtime environment.
 
-```sh
+```bash
 npm run typecheck
 npm run lint
 npm run test:unit
 npm run build
 ```
 
-See [tests/README.md](tests/README.md) for isolated compiled-Worker integration tests, including database fault injection. Never point that harness at operational data.
+The integration suite intentionally targets only an isolated local Worker database. See [tests/README.md](tests/README.md) before running it.
 
-## Trial setup
+## Architecture
 
-The current release is published on the existing Kinetic Youth Site. The Site is publicly reachable; the server-side membership register still denies real pilot data to unregistered identities.
+The UI is React/Vinext. Authenticated Worker APIs use Cloudflare D1 for pilot records. The server separates identity and authorization, validation, domain commands, read models, locations, and transactional persistence.
 
-Follow [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md). Runtime credentials belong in hosting secrets, never source files or chat. Provider integrations are prepared; real SMS delivery, production map access, an unattended notification schedule, production recovery and physical-phone behavior still require setup and verification.
+The application preserves historical ride snapshots when a register changes later. It uses idempotency receipts, version checks, conflict guards, and transactional audit/history writes for critical changes.
 
-The existing Site is identified in `.openai/hosting.json`. Its hosting audience and this app's membership register are separate gates. Reuse that Site when publishing. Never expose a raw Worker without an authentication gateway that strips client-supplied `oai-authenticated-user-*` headers and supplies verified identity.
+See [docs/ARCHITECTURE_REVIEW.md](docs/ARCHITECTURE_REVIEW.md) for the design review, [docs/SERVICE_RECORDS.md](docs/SERVICE_RECORDS.md) for reporting definitions, and [docs/IAM_AND_AUDIT.md](docs/IAM_AND_AUDIT.md) for access/audit detail.
 
-## Architecture and limits
+## Before a real pilot
 
-`lib/server.ts` is the API facade and dispatcher. `lib/server/` separates authentication, validation, storage, scoped reads and commands. `lib/reliability.ts` owns atomic commits, receipts and authorization revalidation. Provider, notification and GPS modules retain their existing responsibilities. See [architecture review](docs/ARCHITECTURE_REVIEW.md) for findings, boundaries and remaining limits.
+Configure production mapping and SMS providers, confirm hosting identity-header protection, connect monitoring and alerts, rehearse recovery, and run an adult-device trial for GPS and handoff workflows. Foreground web tracking does not guarantee background location updates on a locked phone.
 
-Prepared SQL, record versions, current membership checks and database guards enforce mutations. Driver/student trips require a 45-minute scheduling separation; accepted trips reserve 30 minutes in driver availability. This conservative fixed window is not a traffic-aware dispatch optimizer.
+Detailed preparation steps are in [docs/TRIAL_RUNBOOK.md](docs/TRIAL_RUNBOOK.md).
 
-The notification processor removes request metadata older than 7 days, expired request counters, mutation receipts older than 24 hours, outbox entries older than 30 days, and latest GPS for terminal rides after 24 hours. Participant records and business activity are retained until the operator applies an approved retention process. The operational export omits pickup codes and is **not** a restorable database backup.
+## License
 
-Browser GPS requires HTTPS, permission, active connectivity and foreground execution. Locking or backgrounding a phone may stop updates. There is no native background tracking, push notification service, automated matching, in-app turn-by-turn navigation, payments or SMS sign-in. In-app pickup codes and verified-account login work independently of SMS.
-
-Registers record operator attestations; they do not verify licenses, insurance, screening documents or student handoff. Original documents need a separate secure review/storage process. One family record currently represents one student. A coordinator must be reachable during every ride; an in-app help request does not contact emergency services.
-
-Full workspace records are read and filtered for a small pilot. A larger launch needs paginated/query-scoped storage, measured capacity, stronger monitoring, independent security review and a native tracking strategy before claiming parity with a major rideshare platform.
-
-## Source requirements
-
-The supplied document and posters informed the brand and workflows. Their proposed React Native/FastAPI/PostGIS/Firebase stack was reference material, not an instruction to replace the existing application. This implementation follows the user's mobile-friendly web-first, admin-approved trial.
+Add a license before sharing the repository publicly.
