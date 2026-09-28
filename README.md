@@ -1,4 +1,6 @@
-# Kinetic Youth
+# Ride Share App
+
+**Kinetic Youth — community transportation coordination.**
 
 Kinetic Youth is a coordinator-led transportation pilot that helps approved families connect students with approved high-school drivers for activities, tutoring, and community programs.
 
